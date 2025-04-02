@@ -1,22 +1,21 @@
 `timescale 1ns / 1ps
 module Control #(
-    parameter int CONTROL_WIDTH = 8,
-    parameter int CHILDREN_NUM  = 64,
-    parameter int SELECT_WIDTH  = 2
+  parameter int CONTROL_WIDTH = 8,
+  parameter int CHILDREN_NUM  = 64,
+  parameter int SELECT_WIDTH  = 2
 ) (
-    input logic clk,
-    input logic rst_n,
-    input  logic [CONTROL_WIDTH-1:0]  ctrl, // 指示当前需要octree完成的操作，包括：增、减anchor，还有遍历octree，以及中断当前节点的所有孩子
+  input  logic                     clk,
+  input  logic                     rst_n,
+  input  logic [CONTROL_WIDTH-1:0] ctrl,// 指示当前需要octree完成的操作，包括：增、减anchor，还有遍历octree，以及中断当前节点的所有孩子
+  output logic                     search_start,
+  input  logic                     search_done,
+  output logic                     add_anchor,
+  output logic                     del_anchor,
+  input  logic                     add_done,
+  input  logic                     del_done,
 
-    output logic search_start,
-    input  logic search_done,
-    output logic add_anchor,
-    output logic del_anchor,
-    input  logic add_done,
-    input  logic del_done,
-
-    //SRAM的选通信号：searcher，updater 两种选择
-    output logic [SELECT_WIDTH-1:0] mem_select
+  //SRAM的选通信号：searcher，updater 两种选择
+  output logic [SELECT_WIDTH-1:0] mem_select
 );
 
   //用于给sram的MUX指示接通那一个模块给sram sram_1_select与sram_2_select

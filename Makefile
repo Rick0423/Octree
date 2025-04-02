@@ -6,7 +6,7 @@ SIM_EXEC := $(OBJ_DIR)/V$(TOP)  # 生成的可执行文件
 
 # 选择模拟器
 SIMULATOR ?= verilator
-TOP ?= hash_PE_tb  # 默认顶层模块
+TOP ?= tree_search_tb  # 默认顶层模块
 
 # 创建输出目录
 $(shell mkdir -p $(OUTPUT_DIR))
@@ -16,7 +16,8 @@ all: run
 # 运行 Verilator，允许 PINMISSING
 run_verilator: $(VERILOG_SRC) $(TESTBENCHES)
 	@echo "Running simulation with Verilator for TOP=$(TOP)..."
-	verilator --cc --exe --build --trace --binary --top-module $(TOP) $(VERILOG_SRC) $(TESTBENCHES) 
+	verilator --cc --exe --build --trace --binary --top-module $(TOP) $(VERILOG_SRC) $(TESTBENCHES) -Wno-UNOPTFLAT
+	
 	$(SIM_EXEC)
 
 # 根据选定的模拟器运行

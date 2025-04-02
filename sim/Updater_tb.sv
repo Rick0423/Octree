@@ -1,105 +1,142 @@
-`timescale 1ns / 1ps
+`timescale 1ns/1ps
 
-module Updater_tb;
-    parameter int FEATURE_WIDTH    = 400 ; // TO_BR_DETERMINED 应该如何hashing？数据总线宽度？ 如果要分好几下读，hash加密如何处理？ 应该存多少个feature？每个feature存多少位
-    parameter int ENCODE_WIDTH     = 12  ; // 用于表示输入的原码（未经过hashing）的地址宽度，用于指示当前需要更新的anchor的位置
-    parameter int LEVEL_WIDTH      = 2   ;// 用于表示输入的原码（未经过hashing）的层次补偿，用于指示当前需要更新的anchor的位置，00代表第一层，01代表第二层，10代表第三层。
-    parameter int SRAM1_ADDR_WIDTH = 12  ;
-    parameter int SRAM1_DATA_WIDTH = 64  ;
-    parameter int SRAM2_ADDR_WIDTH = 12  ;
-    parameter int SRAM2_DATA_WIDTH = 64  ;
+// Updater 的 testbench
+module tb_Updater;
+
+  // 参数设置（与 Updater 模块默认参数一致）
+  localparam DIMENTION          = 3;
+  localparam DATA_WIDTH         = 16;
+  localparam DATA_BUS_WIDTH     = 64;
+  localparam ADDR_BUS_WIDTH     = 64;
+  localparam CONTROL_WIDTH      = 3;
+  localparam SELECT_WIDTH       = 2;
+  localparam FEATURE_LENTH      = 9;
+  localparam CHILDREN_NUM       = 8;
+  localparam LOG_CHILD_NUM      = 3;
+  localparam TREE_LEVEL         = 5;
+  localparam LOG_TREE_LEVEL     = 3;
+  localparam TREE_ADDR_START    = 4;
+  localparam FEATURE_ADDR_START = 4;
+  localparam ENCODE_ADDR_WIDTH  = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL;
+  
+  // 信号定义
+  reg                         clk;
+  reg                         rst_n;
+  reg                         add_anchor;
+  reg                         del_anchor;
+  wire                        add_done;
+  wire                        del_done;
+  reg  [ENCODE_ADDR_WIDTH-1:0] pos_encode;
+  reg  [DATA_BUS_WIDTH-1:0]   feature_in;
+  
+  // SRAM 接口信号
+  wire                        mem_sram_CEN;
+  wire [ADDR_BUS_WIDTH-1:0]   mem_sram_A;
+  wire [DATA_BUS_WIDTH-1:0]   mem_sram_D;
+  wire                        mem_sram_GWEN;
+  wire [DATA_BUS_WIDTH-1:0]   mem_sram_Q;
+  
+  // 实例化待测模块 Updater
+  Updater #(
+    .DIMENTION          (DIMENTION),
+    .DATA_WIDTH         (DATA_WIDTH),
+    .DATA_BUS_WIDTH     (DATA_BUS_WIDTH),
+    .ADDR_BUS_WIDTH     (ADDR_BUS_WIDTH),
+    .CONTROL_WIDTH      (CONTROL_WIDTH),
+    .SELECT_WIDTH       (SELECT_WIDTH),
+    .FEATURE_LENTH      (FEATURE_LENTH),
+    .CHILDREN_NUM       (CHILDREN_NUM),
+    .LOG_CHILD_NUM      (LOG_CHILD_NUM),
+    .TREE_LEVEL         (TREE_LEVEL),
+    .LOG_TREE_LEVEL     (LOG_TREE_LEVEL),
+    .TREE_ADDR_START    (TREE_ADDR_START),
+    .FEATURE_ADDR_START (FEATURE_ADDR_START),
+    .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH)
+  ) uut (
+    .clk            (clk),
+    .rst_n          (rst_n),
+    .add_anchor     (add_anchor),
+    .del_anchor     (del_anchor),
+    .add_done       (add_done),
+    .del_done       (del_done),
+    .pos_encode     (pos_encode),
+    .feature_in     (feature_in),
+    .mem_sram_CEN   (mem_sram_CEN),
+    .mem_sram_A     (mem_sram_A),
+    .mem_sram_D     (mem_sram_D),
+    .mem_sram_GWEN  (mem_sram_GWEN),
+    .mem_sram_Q     (mem_sram_Q)
+  );
+  
+  // 实例化一个简单的 SRAM 模型，用于存储孩子节点有效性信息
+  sram 
+  #(
+      .DATA_WIDTH (DATA_BUS_WIDTH ),
+      .ADDR_WIDTH (9 ),
+      .MEM_DEPTH  (440      )
+  )
+  u_sram(
+      .clk      (clk      ),
+      .rst_n    (rst_n),
+      .mem_sram_CEN (mem_sram_CEN ),
+      .mem_sram_A (mem_sram_A[8:0] ),
+      .mem_sram_D  (mem_sram_D ),
+      .mem_sram_GWEN (mem_sram_GWEN ),
+      .mem_sram_Q  (mem_sram_Q )
+  );
+
+  
+  
+  // 时钟生成：周期 10ns
+  initial begin
+    clk = 0;
+    forever #5 clk = ~clk;
+  end
+
+  initial begin
+    $dumpfile("./outputs/updater_tb.vcd");
+    $dumpvars(0, tb_Updater);
+  end
+  
+  // testbench 主流程
+  initial begin
+    // 初始信号赋值
+    rst_n      = 0;
+    add_anchor = 0;
+    del_anchor = 0;
+    pos_encode = 0;
+    feature_in = 0;
     
-    reg clk;
-    reg rst_n;
+    // 复位过程
+    #20;
+    rst_n = 1;
+    #20;
     
-    reg add_anchor;
-    reg del_anchor;
-    wire add_done;
-    wire del_done;
+    // 模拟 add_anchor 操作：
+    // 在第一次操作时，将 pos_encode 设置为一个示例值（注意宽度应为 ENCODE_ADDR_WIDTH），
+    // 同时连续 FEATURE_LENTH 个周期提供 feature_in 数据
+    //pos_encode = {3'd2,3'd0,3'd1,3'd6,3'd5,3'd7};  // 示例：全部置1
+    //add_anchor = 1;
+    //// 这里为了简单起见，每个周期用同一个 feature 数据
+    //feature_in = 64'hDEADBEEF_DEADBEEF;
+    //#10;
+    //add_anchor = 0;
     
-    reg [LEVEL_WIDTH+ENCODE_WIDTH-1:0] pos_encode;
-    reg [FEATURE_WIDTH-1:0] feature_in;
+    // 等待 add_done 信号完成（注意：此处 wait 语句适用于仿真环境）
+    //wait(add_done);
+    //#100;
     
-    wire sram_1_CEN;
-    wire [SRAM1_ADDR_WIDTH-1:0] sram_1_A;
-    wire [SRAM1_DATA_WIDTH-1:0] sram_1_D;
-    wire sram_1_GWEN;
-    reg [SRAM1_DATA_WIDTH-1:0] sram_1_Q;
+    // 模拟 del_anchor 操作：
+    pos_encode = {3'd3,3'd1,3'd0,3'd2,3'd3,3'd0};
+    del_anchor = 1;
+    #10;
+    del_anchor = 0;
+    //wait(del_done);
     
-    wire sram_2_CEN;
-    wire [SRAM2_ADDR_WIDTH-1:0] sram_2_A;
-    wire [SRAM2_DATA_WIDTH-1:0] sram_2_D;
-    wire sram_2_GWEN;
-    reg [SRAM2_DATA_WIDTH-1:0] sram_2_Q;
-    
-    // Instantiate the Updater module
-    Updater uut (
-        .clk(clk),
-        .rst_n(rst_n),
-        .add_anchor(add_anchor),
-        .del_anchor(del_anchor),
-        .add_done(add_done),
-        .del_done(del_done),
-        .pos_encode(pos_encode),
-        .feature_in(feature_in),
-        .sram_1_CEN(sram_1_CEN),
-        .sram_1_A(sram_1_A),
-        .sram_1_D(sram_1_D),
-        .sram_1_GWEN(sram_1_GWEN),
-        .sram_1_Q(sram_1_Q),
-        .sram_2_CEN(sram_2_CEN),
-        .sram_2_A(sram_2_A),
-        .sram_2_D(sram_2_D),
-        .sram_2_GWEN(sram_2_GWEN),
-        .sram_2_Q(sram_2_Q)
-    );
-    
-    // Clock Generation
-    always #5 clk = ~clk;
-    
-    initial begin
-        // Initialize signals
-        clk = 0;
-        rst_n = 0;
-        add_anchor = 0;
-        del_anchor = 0;
-        pos_encode = 0;
-        feature_in = 0;
-        sram_1_Q = 0;
-        sram_2_Q = 0;
-        
-        // Reset the system
-        #10 rst_n = 1;
-        
-        // Test Case 1: Add an anchor
-        #10 add_anchor = 1;
-        pos_encode = 14'h005;
-        feature_in = {400{1'b1}}; // Changed test feature data
-        #10 add_anchor = 0;
-        
-        // Wait for completion
-        wait(add_done);
-        #20;
-        
-        // Test Case 2: Delete an anchor
-        #10 del_anchor = 1;
-        pos_encode = 14'h005;
-        #10 del_anchor = 0;
-        
-        // Wait for completion
-        wait(del_done);
-        #20;
-        
-        // Additional Test Case: Adding another anchor
-        #10 add_anchor = 1;
-        pos_encode = 14'h00A;
-        feature_in = {400{1'b0}};
-        #10 add_anchor = 0;
-        
-        wait(add_done);
-        #20;
-        
-        // End simulation
-        $stop;
-    end
+    #200;
+    $finish;
+  end
+
 endmodule
+
+

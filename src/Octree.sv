@@ -1,15 +1,18 @@
 `timescale 1ns / 1ps
 module Octree #(
-  parameter int DIMENTION = 3,  //3D空间
-  parameter int DATA_WIDTH = 16,
-  parameter int DATA_BUS_WIDTH = 64,
-  parameter int ADDR_BUS_WIDTH = 64,
-  parameter int ENCODE_ADDR_WIDTH         = 12            ,// 用于表示输入的原码（未经过hashing）的地址宽度，用于指示当前需要更新的anchor的位置 
-  parameter int CONTROL_WIDTH = 3,
-  parameter int SELECT_WIDTH = 2,
-  parameter int FEATURE_LENTH             = 9             ,//需要多少个DATA_BUS_WIDTH才可以读出一个anchor_feature 36*16=64*9
-  parameter int CHILDREN_NUM = 8,
-  parameter int TREE_LEVEL = 5
+  parameter  DIMENTION         = 3,  //3D空间
+  parameter  DATA_WIDTH        = 16,
+  parameter  DATA_BUS_WIDTH    = 64,
+  parameter  ADDR_BUS_WIDTH    = 64,
+  parameter  CONTROL_WIDTH     = 3,
+  parameter  SELECT_WIDTH      = 2,
+  parameter  FEATURE_LENTH     = 9,  //需要多少个DATA_BUS_WIDTH才可以读出一个anchor_feature 36*16=64*9
+  parameter  CHILDREN_NUM      = 8,
+  parameter  LOG_CHILD_NUM     = 3,
+  parameter  TREE_LEVEL        = 5,
+  parameter  LOG_TREE_LEVEL    = 3,
+  parameter  ENCODE_ADDR_WIDTH = LOG_CHILD_NUM*TREE_LEVEL+LOG_TREE_LEVEL // 用于表示输入的原码（未经过hashing）的地址宽度，用于指示当前需要更新的anchor的位置 
+  //     均为3位 | level | 0 | 1 | 2 | 3 | 4 |
 ) (
   input logic clk,
   input logic rst_n, // 清零负有效
@@ -18,7 +21,7 @@ module Octree #(
   input  logic                [   DATA_BUS_WIDTH-1:0] feature_in,
   output logic                [   DATA_BUS_WIDTH-1:0] feature_out,
   input  logic                [    CONTROL_WIDTH-1:0] ctrl,         // 控制信号
-  input  logic [DIMENTION-1:0][       DATA_WIDTH-1:0] cam_pos,
+  input  logic [DIMENTION-1:0][       DATA_WIDTH-1:0] cam_pos,//csr
 
   //输入输出features的握手信号
   input  logic out_valid,
@@ -27,17 +30,17 @@ module Octree #(
   output logic in_ready,
 
   //与主存SRAM的唯一的interface
-  input  logic                      mem_sram_CEN,   // 芯片使能，低有效
-  input  logic [ADDR_BUS_WIDTH-1:0] mem_sram_A,     // 地址
-  input  logic [DATA_BUS_WIDTH-1:0] mem_sram_D,     // 写入数据
-  input  logic                      mem_sram_GWEN,  // 读写使能：0 写，1 读
-  output logic [DATA_BUS_WIDTH-1:0] mem_sram_Q      // 读出数据
+  output logic                      mem_sram_CEN,   // 芯片使能，低有效
+  output logic [ADDR_BUS_WIDTH-1:0] mem_sram_A,     // 地址
+  output logic [DATA_BUS_WIDTH-1:0] mem_sram_D,     // 写入数据
+  output logic                      mem_sram_GWEN,  // 读写使能：0 写，1 读
+  input  logic [DATA_BUS_WIDTH-1:0] mem_sram_Q      // 读出数据
 );
 
   // 定义两个个来源的选择编码
-  localparam NAN = 0;
-  localparam SEARCHER = 1;
-  localparam UPDATER = 2;
+  localparam   NAN                        = 0     ;
+  localparam   SEARCHER                   = 1     ;
+  localparam   UPDATER                    = 2     ;
 
   // Control模块与其他模块之间的控制信号
   logic                      search_start;
@@ -100,7 +103,8 @@ module Octree #(
     .mem_sram_Q   (searcher_sram_Q),     // 可根据需要连接
     .feature_out  (feature_out),
     .out_valid    (out_valid),
-    .out_ready    (out_ready)
+    .out_ready    (out_ready),
+    .tree_num     ()
   );
 
   Updater #(
