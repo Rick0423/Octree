@@ -54,6 +54,7 @@ module Updater #(
   logic   [DATA_BUS_WIDTH-1:0] del_sram_D;  
   logic                        del_sram_GWEN; 
   logic   [DATA_BUS_WIDTH-1:0] del_sram_Q;  
+  
 
   //updater状态机
   always_ff @(posedge clk or negedge rst_n) begin : updater_top_state_machine
@@ -234,7 +235,7 @@ module Delete_anchor #(
   logic [ DATA_BUS_WIDTH/4-1:0] anchor_data;//读取出来的64位数据中关心的16bit数据。（这一个八叉树的自己有效/孩子有效的逻辑）
 
   logic [                  2:0] level;//输入的addr_to_calculate的层次
-  logic [                  2:0] offset             [4:0];//输入的addr_to_calculate的每一层的偏置
+  logic [   ADDR_BUS_WIDTH-1:0] offset             [4:0];//输入的addr_to_calculate的每一层的偏置
   logic [   ADDR_BUS_WIDTH-1:0] address_part_;          
   logic [   ADDR_BUS_WIDTH-1:0] actual_address;//计算出的，基本单元为16bit的地址，一簇anchor为1.
   logic [   ADDR_BUS_WIDTH-1:0] address_for_sram;//针对sram读写的，基本单元为64bit的地址。
@@ -356,7 +357,7 @@ module Delete_anchor #(
   generate 
     assign level = addr_to_calculate[ENCODE_ADDR_WIDTH-1:LOG_CHILD_NUM*TREE_LEVEL];
     for (a = 0; a < TREE_LEVEL; a += 1) begin
-      assign offset[a] = addr_to_calculate[LOG_CHILD_NUM*TREE_LEVEL-1-a*LOG_CHILD_NUM -:LOG_CHILD_NUM];
+      assign offset[a] = {61'd0,addr_to_calculate[LOG_CHILD_NUM*TREE_LEVEL-1-a*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
     end
   endgenerate
 
@@ -413,6 +414,7 @@ module Add_anchor #(
 );
   localparam IDLE = 0, BUFFERING = 1, UPDATE_SELF = 2, UPDATE_PARENT = 3, WRITE_FEATURE = 4;
   localparam [TREE_LEVEL-1:0][DATA_BUS_WIDTH-1:0] ADDR_VARY = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
+  localparam  int PRIMES [4:0] = {2099719, 3867465, 807545, 2654435, 1};  // 质数数组，增强哈希随机性
 
   logic [3-1:0] state_input_buffer, add_state;
   logic [COUNTER_WIDTH-1:0] input_cnt, cnt,hash_cnt;
@@ -423,7 +425,7 @@ module Add_anchor #(
   logic [DATA_BUS_WIDTH/4-1:0]                      anchor_data;
   //生成地址的相关组合逻辑信号
   logic [                  2:0]                     level;
-  logic [                  2:0]                     offset            [4:0];
+  logic [   ADDR_BUS_WIDTH-1:0]                     offset            [4:0];
   logic [   ADDR_BUS_WIDTH-1:0]                     address_part_;
   logic [   ADDR_BUS_WIDTH-1:0]                     actual_address;
   logic [   ADDR_BUS_WIDTH-1:0]                     address_for_sram;
@@ -563,18 +565,31 @@ module Add_anchor #(
   end
 
   //计算hash之后的地址 TODO ！！！！！
-  always_ff @( posedge clk or negedge rst_n ) begin : hash_addr_generator
-    if(rst_n == 0) begin
-      hash_encoded_addr <= 0;
-      hash_cnt <= 0;
-    end else if(add_state != IDLE)begin
-        if(hash_cnt == 0)begin
-          //这时候需要的地址数据都在reg_pos中开始计算hash 地址
-        end else if(hash_cnt == 1) begin
-          //这时候需要的地址数据都在reg_pos中开始计算hash 地址，第二拍（如果需要的话）
-        end
+  always_comb begin
+      if (!rst_n) begin
+        hash_encoded_addr = 64'd0;
+      end else if (add_state == WRITE_FEATURE) begin  // OUT 状态
+        case (level)
+          0: hash_encoded_addr = offset[0]+64'd1;
+          1: hash_encoded_addr = offset[0]+64'd1 + (offset[1] + 64'd1) * 8;
+          2: hash_encoded_addr = ((offset[0] + 64'd1) * PRIMES[0] 
+                       ^ (offset[1] + 64'd1) * PRIMES[1] 
+                       ^ (offset[2] + 64'd1) * PRIMES[2] )+ 64'd72;
+          3: hash_encoded_addr = ((offset[0] + 64'd1) * PRIMES[0] 
+                       ^ (offset[1] + 64'd1) * PRIMES[1] 
+                       ^ (offset[2] + 64'd1) * PRIMES[2] 
+                       ^ (offset[3] + 64'd1) * PRIMES[3] )+ 64'd72;
+          4: hash_encoded_addr = ((offset[0] + 64'd1) * PRIMES[0] 
+                       ^ (offset[1] + 64'd1) * PRIMES[1] 
+                       ^ (offset[2] + 64'd1) * PRIMES[2] 
+                       ^ (offset[3] + 64'd1) * PRIMES[3]  
+                       ^ (offset[4] + 64'd1) * PRIMES[4] )+ 64'd72;
+          default: hash_encoded_addr = 64'd0;
+        endcase
+      end else begin
+        hash_encoded_addr = 64'd0;
+      end
     end
-  end
 
   //截取64bit数据中有用的部分，生成判断是否子节点全部为0的判断标志符
   always_comb begin : write_back_data_preparation
@@ -594,7 +609,7 @@ module Add_anchor #(
   generate 
     assign level = addr_to_calculate[ENCODE_ADDR_WIDTH-1 -:3];
     for (a = 0; a < TREE_LEVEL; a += 1) begin
-      assign offset[a] = addr_to_calculate[LOG_CHILD_NUM*TREE_LEVEL-1-a*LOG_CHILD_NUM -:LOG_CHILD_NUM];
+      assign offset[a] = {61'd0,addr_to_calculate[LOG_CHILD_NUM*TREE_LEVEL-1-a*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
     end
   endgenerate
 

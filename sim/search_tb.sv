@@ -5,16 +5,18 @@ module tree_search_tb;
   parameter DATA_WIDTH        = 16;
   parameter DATA_BUS_WIDTH    = 64;
   parameter ADDR_BUS_WIDTH    = 64;
-  parameter ENCODE_ADDR_WIDTH = 18;
   parameter FEATURE_LENTH     = 9;
   parameter CHILDREN_NUM      = 8;
   parameter TREE_LEVEL        = 5;
-  parameter SELECT_WIDTH      = 4;
-  parameter LOD_START_ADDR    = 1;
+  parameter SELECT_WIDTH      = 3;
   parameter COUNTER_WIDTH     = 4;
-  parameter SUB_SEARCH_NUM    = 4;
   parameter LOG_CHILD_NUM     = 3;
-  parameter FIFO_DATA_WIDTH   = ENCODE_ADDR_WIDTH + LOG_CHILD_NUM + LOG_CHILD_NUM * CHILDREN_NUM+1;
+  parameter LOG_TREE_LEVEL    = 3;
+  parameter TREE_ADDR_START   = 0;
+  parameter LOD_START_ADDR    = 500;
+  parameter FEATURE_START_ADDR= 1200;
+  parameter ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL;
+  parameter FIFO_DATA_WIDTH   = ENCODE_ADDR_WIDTH + LOG_CHILD_NUM+1+LOG_CHILD_NUM*CHILDREN_NUM; //+1原因在于0-8需要4bit数据来表示
   parameter FIFO_DEPTH_1      = ENCODE_ADDR_WIDTH + 10;
   parameter FIFO_DEPTH_2      = ENCODE_ADDR_WIDTH + 10;
 
@@ -34,25 +36,26 @@ module tree_search_tb;
   logic                      out_valid;
   logic                      out_ready;
 
-  // 实例化待测设计（DUT）
-  tree_search #(
-    .DIMENTION(DIMENTION),
-    .DATA_WIDTH(DATA_WIDTH),
-    .DATA_BUS_WIDTH(DATA_BUS_WIDTH),
-    .ADDR_BUS_WIDTH(ADDR_BUS_WIDTH),
-    .ENCODE_ADDR_WIDTH(ENCODE_ADDR_WIDTH),
-    .FEATURE_LENTH(FEATURE_LENTH),
-    .CHILDREN_NUM(CHILDREN_NUM),
-    .TREE_LEVEL(TREE_LEVEL),
-    .SELECT_WIDTH(SELECT_WIDTH),
-    .LOD_START_ADDR(LOD_START_ADDR),
-    .COUNTER_WIDTH(COUNTER_WIDTH),
-    .SUB_SEARCH_NUM(SUB_SEARCH_NUM),
-    .LOG_CHILD_NUM(LOG_CHILD_NUM),
-    .FIFO_DATA_WIDTH(FIFO_DATA_WIDTH),
-    .FIFO_DEPTH_1(FIFO_DEPTH_1),
-    .FIFO_DEPTH_2(FIFO_DEPTH_2)
-  ) dut (
+tree_search #(
+    .DIMENTION          (DIMENTION          ),
+    .DATA_WIDTH         (DATA_WIDTH         ),
+    .DATA_BUS_WIDTH     (DATA_BUS_WIDTH     ),
+    .ADDR_BUS_WIDTH     (ADDR_BUS_WIDTH     ),
+    .FEATURE_LENTH      (FEATURE_LENTH      ),
+    .CHILDREN_NUM       (CHILDREN_NUM       ),
+    .TREE_LEVEL         (TREE_LEVEL         ),
+    .SELECT_WIDTH       (SELECT_WIDTH       ),
+    .COUNTER_WIDTH      (COUNTER_WIDTH      ),
+    .LOG_CHILD_NUM      (LOG_CHILD_NUM      ),
+    .LOG_TREE_LEVEL     (LOG_TREE_LEVEL     ),
+    .TREE_ADDR_START    (TREE_ADDR_START    ),
+    .LOD_START_ADDR     (LOD_START_ADDR     ),
+    .FEATURE_START_ADDR (FEATURE_START_ADDR ),
+    .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH  ),
+    .FIFO_DATA_WIDTH    (FIFO_DATA_WIDTH    ),
+    .FIFO_DEPTH_1       (FIFO_DEPTH_1       ),
+    .FIFO_DEPTH_2       (FIFO_DEPTH_2       )
+) dut (
     .clk(clk),
     .rst_n(rst_n),
     .tree_search_start(tree_search_start),
@@ -72,14 +75,14 @@ module tree_search_tb;
   sram 
   #(
       .DATA_WIDTH (DATA_BUS_WIDTH ),
-      .ADDR_WIDTH (9 ),
-      .MEM_DEPTH  (440      )
+      .ADDR_WIDTH (64 ),
+      .MEM_DEPTH  (20280      )
   )
   u_sram(
       .clk      (clk      ),
       .rst_n    (rst_n),
       .mem_sram_CEN (mem_sram_CEN ),
-      .mem_sram_A (mem_sram_A[8:0] ),
+      .mem_sram_A (mem_sram_A ),
       .mem_sram_D  (mem_sram_D ),
       .mem_sram_GWEN (mem_sram_GWEN ),
       .mem_sram_Q  (mem_sram_Q )
@@ -122,13 +125,13 @@ module tree_search_tb;
 
     // 模拟输出有效信号
     wait(out_ready);
-    #10;
+    #100;
     out_valid = 1;
     #10;
     out_valid = 0;
 
     // 等待搜索完成
-    //wait(tree_search_done);
+    wait(tree_search_done);
 
     // 结束仿真
     #500;
@@ -171,9 +174,9 @@ module sram #(
             mem_sram_Q <= {DATA_WIDTH{1'b0}};
         end else if (!mem_sram_CEN) begin
             if (!mem_sram_GWEN) begin
-                memory[mem_sram_A] <= mem_sram_D; // Write operation
+                memory[mem_sram_A[14:0]] <= mem_sram_D; // Write operation
             end else begin
-                mem_sram_Q <= memory[mem_sram_A]; // Read operation
+                mem_sram_Q <= memory[mem_sram_A[14:0]]; // Read operation
             end
         end
     end

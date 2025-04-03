@@ -198,6 +198,11 @@ if __name__ == "__main__":
     tree_generator.add_tree(default_valid_counts, total_levels=5)
     tree_generator.add_tree(default_valid_counts, total_levels=5)
     tree_generator.add_tree(default_valid_counts, total_levels=5)
+    tree_generator.add_tree(default_valid_counts, total_levels=5)
+    tree_generator.add_tree(default_valid_counts, total_levels=5)
+    tree_generator.add_tree(default_valid_counts, total_levels=5)
+    tree_generator.add_tree(default_valid_counts, total_levels=5)
+    tree_generator.add_tree(default_valid_counts, total_levels=5)
 
     # 将所有树的数据写入文件 "sram.txt"
     tree_generator.write_file("sram.txt")
