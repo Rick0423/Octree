@@ -7,32 +7,38 @@ module Searcher #(
   parameter FEATURE_LENTH     = 9,
   parameter CHILDREN_NUM      = 8,
   parameter TREE_LEVEL        = 5,
-  parameter SELECT_WIDTH      = 4,
+  parameter SELECT_WIDTH      = 3,
   parameter COUNTER_WIDTH     = 4,
-  parameter SUB_SEARCH_NUM    = 4,
   parameter LOG_CHILD_NUM     = 3,
   parameter LOG_TREE_LEVEL    = 3,
-  parameter TREE_ADDR_START   = 4,
-  parameter LOD_START_ADDR    = 1,
-  parameter ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL
+  parameter TREE_ADDR_START   = 0,
+  parameter LOD_START_ADDR    = 500,
+  parameter FEATURE_START_ADDR= 400,
+  parameter ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL,
+  parameter FIFO_DATA_WIDTH   = ENCODE_ADDR_WIDTH + LOG_CHILD_NUM+1+LOG_CHILD_NUM*CHILDREN_NUM, //+1原因在于0-8需要4bit数据来表示
+  parameter FIFO_DEPTH_1      = ENCODE_ADDR_WIDTH + 10,
+  parameter FIFO_DEPTH_2      = ENCODE_ADDR_WIDTH + 10
 ) (
   input  logic                                     clk,
   input  logic                                     rst_n,
   //控制信号，用于与controler交互 
   input  logic                                     search_start,
   output logic                                     search_done,
-  //SRAM_2_interface 用于存储孩子的FEATURE
-  output logic                                     mem_sram_CEN,   // 芯片使能，低有效
-  output logic                [ADDR_BUS_WIDTH-1:0] mem_sram_A,     // 地址
-  output logic                [DATA_BUS_WIDTH-1:0] mem_sram_D,     // 写入数据
-  output logic                                     mem_sram_GWEN,  // 读写使能：0 写，1 读
-  input  logic                [DATA_BUS_WIDTH-1:0] mem_sram_Q,     // 读出数据
-  input  logic [DIMENTION-1:0][    DATA_WIDTH-1:0] cam_pos,
+  //用于和主存连接的mem接口
+  output logic                                     mem_sram_CEN,   
+  output logic                [ADDR_BUS_WIDTH-1:0] mem_sram_A,     
+  output logic                [DATA_BUS_WIDTH-1:0] mem_sram_D,     
+  output logic                                     mem_sram_GWEN,  
+  input  logic                [DATA_BUS_WIDTH-1:0] mem_sram_Q,     
+  //CSR信号
+  input  logic [DIMENTION-1:0][    DATA_WIDTH-1:0] cam_pos,       
+  input  logic                [    DATA_WIDTH-1:0] dist_max,      
+  input  logic                [    DATA_WIDTH-1:0] s,             
   //输出的feature
   output logic                [DATA_BUS_WIDTH-1:0] feature_out,
   input  logic                                     out_valid,
   output logic                                     out_ready,
-  //当前总共的八叉树的数量
+  //当前主存中存储的八叉树的总量
   input  logic                [ COUNTER_WIDTH-1:0] tree_num
 );
   //针对SRAM接口进行多路选通
@@ -42,7 +48,7 @@ module Searcher #(
   localparam IDLE = 0, LOD = 1, TREE_SEARCH = 2, DONE = 3;
 
   //用于可能的计数器
-  logic [COUNTER_WIDTH-1:0] tree_cnt, cnt, hash_cnt;
+  logic [COUNTER_WIDTH-1:0] tree_cnt;
 
   //主存接口
   logic                      lod_sram_CEN;
@@ -179,23 +185,29 @@ module Searcher #(
     .cam_pos           (cam_pos),
     .current_tree_count(current_tree_count),
     .lod_active        (lod_active),
-    .dist_max          (),
-    .s                 ()
+    .dist_max          (dist_max),
+    .s                 (s)
   );
 
-  tree_search #(
-    .DIMENTION        (DIMENTION),
-    .DATA_WIDTH       (DATA_WIDTH),
-    .DATA_BUS_WIDTH   (DATA_BUS_WIDTH),
-    .ADDR_BUS_WIDTH   (ADDR_BUS_WIDTH),
-    .ENCODE_ADDR_WIDTH(ENCODE_ADDR_WIDTH),
-    .FEATURE_LENTH    (FEATURE_LENTH),
-    .CHILDREN_NUM     (CHILDREN_NUM),
-    .TREE_LEVEL       (TREE_LEVEL),
-    .SELECT_WIDTH     (SELECT_WIDTH),
-    .LOD_START_ADDR   (LOD_START_ADDR),
-    .COUNTER_WIDTH    (COUNTER_WIDTH),
-    .SUB_SEARCH_NUM   (SUB_SEARCH_NUM)
+  tree_search  #(
+      .DIMENTION          (DIMENTION          ),
+      .DATA_WIDTH         (DATA_WIDTH         ),
+      .DATA_BUS_WIDTH     (DATA_BUS_WIDTH     ),
+      .ADDR_BUS_WIDTH     (ADDR_BUS_WIDTH     ),
+      .FEATURE_LENTH      (FEATURE_LENTH      ),
+      .CHILDREN_NUM       (CHILDREN_NUM       ),
+      .TREE_LEVEL         (TREE_LEVEL         ),
+      .SELECT_WIDTH       (SELECT_WIDTH       ),
+      .COUNTER_WIDTH      (COUNTER_WIDTH      ),
+      .LOG_CHILD_NUM      (LOG_CHILD_NUM      ),
+      .LOG_TREE_LEVEL     (LOG_TREE_LEVEL     ),
+      .TREE_ADDR_START    (TREE_ADDR_START    ),
+      .LOD_START_ADDR     (LOD_START_ADDR     ),
+      .FEATURE_START_ADDR (FEATURE_START_ADDR ),
+      .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH  ),
+      .FIFO_DATA_WIDTH    (FIFO_DATA_WIDTH    ),
+      .FIFO_DEPTH_1       (FIFO_DEPTH_1       ),
+      .FIFO_DEPTH_2       (FIFO_DEPTH_2       )
   ) u_tree_search (
     .clk              (clk),
     .rst_n            (rst_n),
@@ -255,20 +267,20 @@ module tree_search #(
   parameter DATA_WIDTH        = 16,
   parameter DATA_BUS_WIDTH    = 64,
   parameter ADDR_BUS_WIDTH    = 64,
-  parameter ENCODE_ADDR_WIDTH = 18,
   parameter FEATURE_LENTH     = 9,
   parameter CHILDREN_NUM      = 8,
   parameter TREE_LEVEL        = 5,
   parameter SELECT_WIDTH      = 4,
-  parameter LOD_START_ADDR    = 1,
   parameter COUNTER_WIDTH     = 4,
-  parameter SUB_SEARCH_NUM    = 4,
   parameter LOG_CHILD_NUM     = 3,
-  parameter TREE_ADDR_START   = 0,
   parameter LOG_TREE_LEVEL    = 3,
+  parameter TREE_ADDR_START   = 0,
+  parameter LOD_START_ADDR    = 500,
+  parameter FEATURE_START_ADDR= 400,
+  parameter ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL,
   parameter FIFO_DATA_WIDTH   = ENCODE_ADDR_WIDTH + LOG_CHILD_NUM+1+LOG_CHILD_NUM*CHILDREN_NUM, //+1原因在与0-8需要4bit数据来表示
-  parameter FIFO_DEPTH_1        = ENCODE_ADDR_WIDTH + 10,
-  parameter FIFO_DEPTH_2        = ENCODE_ADDR_WIDTH + 10
+  parameter FIFO_DEPTH_1      = ENCODE_ADDR_WIDTH + 10,
+  parameter FIFO_DEPTH_2      = ENCODE_ADDR_WIDTH + 10
 ) (
   input  logic                      clk,
   input  logic                      rst_n,
@@ -290,7 +302,6 @@ module tree_search #(
 );
   localparam IDLE = 0, SEARCH = 1, OUT = 2, DONE = 3;
   localparam FIFO_IDLE=0,FIFO_SEARCH=1,FIFO_OUTPUT=2,FIFO_SEARCH_THIS_ANCHOR=3,FIFO_READY_OUT=4,FIFO_OUTPUT_THIS_ANCHOR=5;
-
   localparam [TREE_LEVEL-1:0][DATA_BUS_WIDTH-1:0] ADDR_VARY = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
 
   //控制信号、计数器、状态机
@@ -301,13 +312,12 @@ module tree_search #(
   logic searching_done;
   logic first;
 
-
   //输入到FIFO中保存的anchor原码地址
   logic [ENCODE_ADDR_WIDTH-1:0] w_fifo_pos_encode;
   //从64bit中选出关心的16bit,4选1。
   logic [1:0] anchor_interested;  
 
-  //解算的组合逻辑
+  //解算的组合逻辑，根据从SRAM中读上来的数据，生成ready to search的数据，写入FIFO中
   logic [CHILDREN_NUM-1:0]                    self_data;
   logic [CHILDREN_NUM-1:0]                    child_data;
   logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0] self_ones_pos;
@@ -316,32 +326,31 @@ module tree_search #(
   logic [LOG_CHILD_NUM:0]                     child_ones_count;
 
   //用于标识流水线中的数据是否有效。
-  logic                         fifo_1_output_valid;//从fifo中读出的数据是否有效（用于地址解算）
-  logic                         fifo_2_output_valid;//从fifo中读出的数据是否有效（用于地址解算）
+  logic                         fifo_1_output_valid;//从fifo中读出的数据是否有效
+  logic                         fifo_2_output_valid;//从fifo中读出的数据是否有效
   logic                         mem_read_data_valid;//访存拿到的数据是否有效
-  logic                         write_fifo_data_valid;//准备写进fifo的数据是否有效
   logic                         mem_stalled_1_cycle;
+  logic                         write_fifo_data_valid;//准备写进fifo的数据是否有效
+  
 
   //FIFO的接口信号
-  logic fifo_1_wr_en;
-  logic fifo_1_rd_en;
+  logic                       fifo_1_wr_en;
+  logic                       fifo_1_rd_en;
+  logic                       fifo_1_empty;
+  logic                       fifo_1_full;
   logic [FIFO_DATA_WIDTH-1:0] fifo_1_wdata;
   logic [FIFO_DATA_WIDTH-1:0] fifo_1_rdata;
-  logic fifo_1_empty;
-  logic fifo_1_full;
 
-  logic fifo_2_wr_en;
-  logic fifo_2_rd_en;
+  logic                       fifo_2_wr_en;
+  logic                       fifo_2_rd_en;
+  logic                       fifo_2_empty;
+  logic                       fifo_2_full;
   logic [FIFO_DATA_WIDTH-1:0] fifo_2_wdata;
   logic [FIFO_DATA_WIDTH-1:0] fifo_2_rdata;
-  logic fifo_2_empty;
-  logic fifo_2_full;
 
-   
-  //从fifo中读出的数据中的某一部分，分三个部分，
+  //从fifo中读出的数据中的第三部分，标识当前的fifo读出信号中有多少个有效的anchor，
   logic [3:0]              r_fifo_1_anchor_num;
   logic [3:0]              r_fifo_2_anchor_num;
-
 
   //实际地址计算过程中的使用的数据，方便debug地址线是否正确。
   logic [ 2:0]                                      level;
@@ -351,7 +360,7 @@ module tree_search #(
   logic [   ADDR_BUS_WIDTH-1:0]                     address_for_sram;
   logic [ENCODE_ADDR_WIDTH-1:0]                     mem_posencode;
 
-
+  //总的状态机
   always_ff @(posedge clk or negedge rst_n) begin : state_machin
     if (rst_n == 0) begin
       tree_state       <= IDLE;
@@ -383,6 +392,7 @@ module tree_search #(
     end
   end
 
+  //从主存中读取数据，写入child_data、self_data中以便之后的处理
   always_ff @( posedge clk or negedge rst_n ) begin : get_intersted_data
     if(rst_n == 0) begin
       self_data <= 0;
@@ -437,7 +447,7 @@ module tree_search #(
       fifo_1_wdata <= 0;
       fifo_2_wdata <= 0;
     end else begin
-      if (write_fifo_data_valid & (tree_state == SEARCH)) begin  
+      if (write_fifo_data_valid & (tree_state == SEARCH)) begin // 只有在搜索阶段需要写入FIFO  
         if((child_ones_count != 0) && lod_active[w_fifo_pos_encode[ENCODE_ADDR_WIDTH-1 -:3]]) begin 
           fifo_1_wr_en <= 1;
           fifo_1_wdata <= {w_fifo_pos_encode, child_ones_pos, child_ones_count};
@@ -458,7 +468,7 @@ module tree_search #(
   end
 
   //读出FIFO的逻辑 
-  //FIFO的输出逻辑由这部分组成，搜索阶段和输出阶段。两个过程中分别读取两个不同的FIFO
+  //FIFO的输出逻辑主要由这个状态机来实现
   always_ff @(posedge clk or negedge rst_n) begin : FIFO_1_read_out
     if (rst_n == 0) begin
       fifo_state <= FIFO_IDLE;
@@ -556,7 +566,7 @@ module tree_search #(
     end
   end
 
-  //直接的
+
   always_ff @( posedge clk or negedge rst_n ) begin : read_write_to_sram
     if(rst_n == 0) begin
       mem_sram_CEN <= 1;
@@ -654,6 +664,8 @@ module tree_search #(
     end
   end
 
+  assign mem_sram_A = address_for_sram;
+
   //生成总的状态转移控制信号
   always_ff @( posedge clk or rst_n ) begin : gen_extra_data
     if(rst_n == 0) begin
@@ -672,47 +684,45 @@ module tree_search #(
     end
   end
 
-assign mem_sram_A = address_for_sram;
-//TODO
   //流水线中的数据有效信号依次进行传递
-  always_ff @( posedge clk or negedge rst_n ) begin : valid_signal_in_pipline
-    if(rst_n == 0) begin
+  always_ff @(posedge clk or negedge rst_n) begin : valid_signal_in_pipline
+    if (rst_n == 0) begin
       write_fifo_data_valid <= 0;
     end else begin
       write_fifo_data_valid <= mem_stalled_1_cycle;
       mem_stalled_1_cycle   <= mem_read_data_valid;
     end
   end
+
   //FIFO——1 用于存储搜索的信息
   fifo_sync #(
-      .DATA_WIDTH (FIFO_DATA_WIDTH),
-      .DEPTH      (FIFO_DEPTH_1      )
-  ) u_fifo_sync_1(
-      .clk   (clk   ),
-      .rst_n (rst_n ),
-      .wr_en (fifo_1_wr_en ),
-      .rd_en (fifo_1_rd_en ),
-      .wdata (fifo_1_wdata ),
-      .rdata (fifo_1_rdata ),
-      .empty (fifo_1_empty ),
-      .full  (fifo_1_full  )
+    .DATA_WIDTH(FIFO_DATA_WIDTH),
+    .DEPTH     (FIFO_DEPTH_1)
+  ) u_fifo_sync_1 (
+    .clk  (clk),
+    .rst_n(rst_n),
+    .wr_en(fifo_1_wr_en),
+    .rd_en(fifo_1_rd_en),
+    .wdata(fifo_1_wdata),
+    .rdata(fifo_1_rdata),
+    .empty(fifo_1_empty),
+    .full (fifo_1_full)
   );
+
   //FIFO——2 用于存储anchor相关的信息。
   fifo_sync #(
-      .DATA_WIDTH (FIFO_DATA_WIDTH ),
-      .DEPTH      (FIFO_DEPTH_2      )
-  ) u_fifo_sync_2(
-      .clk   (clk   ),
-      .rst_n (rst_n ),
-      .wr_en (fifo_2_wr_en ),
-      .rd_en (fifo_2_rd_en ),
-      .wdata (fifo_2_wdata ),
-      .rdata (fifo_2_rdata ),
-      .empty (fifo_2_empty ),
-      .full  (fifo_2_full  )
+    .DATA_WIDTH(FIFO_DATA_WIDTH),
+    .DEPTH     (FIFO_DEPTH_2)
+  ) u_fifo_sync_2 (
+    .clk  (clk),
+    .rst_n(rst_n),
+    .wr_en(fifo_2_wr_en),
+    .rd_en(fifo_2_rd_en),
+    .wdata(fifo_2_wdata),
+    .rdata(fifo_2_rdata),
+    .empty(fifo_2_empty),
+    .full (fifo_2_full)
   );
-  
-
 endmodule
 
 

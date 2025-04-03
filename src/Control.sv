@@ -1,8 +1,8 @@
 `timescale 1ns / 1ps
 module Control #(
-  parameter int CONTROL_WIDTH = 8,
-  parameter int CHILDREN_NUM  = 64,
-  parameter int SELECT_WIDTH  = 2
+  parameter CONTROL_WIDTH = 8,
+  parameter CHILDREN_NUM  = 64,
+  parameter SELECT_WIDTH  = 3
 ) (
   input  logic                     clk,
   input  logic                     rst_n,

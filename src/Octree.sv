@@ -1,46 +1,50 @@
 `timescale 1ns / 1ps
 module Octree #(
-  parameter  DIMENTION         = 3,  //3D空间
+  parameter  DIMENTION         = 3,  
   parameter  DATA_WIDTH        = 16,
   parameter  DATA_BUS_WIDTH    = 64,
   parameter  ADDR_BUS_WIDTH    = 64,
-  parameter  CONTROL_WIDTH     = 3,
-  parameter  SELECT_WIDTH      = 2,
   parameter  FEATURE_LENTH     = 9,  //需要多少个DATA_BUS_WIDTH才可以读出一个anchor_feature 36*16=64*9
   parameter  CHILDREN_NUM      = 8,
-  parameter  LOG_CHILD_NUM     = 3,
   parameter  TREE_LEVEL        = 5,
+  parameter  SELECT_WIDTH      = 3,
+  parameter  CONTROL_WIDTH     = 3,  //控制信号的宽度
+  parameter  COUNTER_WIDTH     = 4,
+  parameter  LOG_CHILD_NUM     = 3,
   parameter  LOG_TREE_LEVEL    = 3,
-  parameter  ENCODE_ADDR_WIDTH = LOG_CHILD_NUM*TREE_LEVEL+LOG_TREE_LEVEL // 用于表示输入的原码（未经过hashing）的地址宽度，用于指示当前需要更新的anchor的位置 
-  //     均为3位 | level | 0 | 1 | 2 | 3 | 4 |
+  parameter  ENCODE_ADDR_WIDTH = LOG_CHILD_NUM*TREE_LEVEL+LOG_TREE_LEVEL, // 用于表示输入的原码（未经过hashing）的地址宽度，用于指示当前需要更新的anchor的位置 
+  //     3*6 = 18 bit | level | offset 0 | offset  1 | offset  2 | offset  3 | offset  4 |
+  parameter  TREE_ADDR_START   = 0,
+  parameter  LOD_START_ADDR    = 500,
+  parameter  FEATURE_START_ADDR= 400
 ) (
-  input logic clk,
-  input logic rst_n, // 清零负有效
-
-  input  logic                [ENCODE_ADDR_WIDTH-1:0] pos_encode,
-  input  logic                [   DATA_BUS_WIDTH-1:0] feature_in,
-  output logic                [   DATA_BUS_WIDTH-1:0] feature_out,
-  input  logic                [    CONTROL_WIDTH-1:0] ctrl,         // 控制信号
-  input  logic [DIMENTION-1:0][       DATA_WIDTH-1:0] cam_pos,//csr
-
-  //输入输出features的握手信号
-  input  logic out_valid,
-  input  logic in_valid,
-  output logic out_ready,
-  output logic in_ready,
-
-  //与主存SRAM的唯一的interface
-  output logic                      mem_sram_CEN,   // 芯片使能，低有效
-  output logic [ADDR_BUS_WIDTH-1:0] mem_sram_A,     // 地址
-  output logic [DATA_BUS_WIDTH-1:0] mem_sram_D,     // 写入数据
-  output logic                      mem_sram_GWEN,  // 读写使能：0 写，1 读
-  input  logic [DATA_BUS_WIDTH-1:0] mem_sram_Q      // 读出数据
+  input  logic                                        clk,
+  input  logic                                        rst_n,
+  input  logic                [ENCODE_ADDR_WIDTH-1:0] pos_encode, // 输入的要更新的anchor的坐标
+  input  logic                [   DATA_BUS_WIDTH-1:0] feature_in, // 要更新的新增的anchor的feature
+  output logic                [   DATA_BUS_WIDTH-1:0] feature_out,// 输出的anchor的feature
+  input  logic                [    CONTROL_WIDTH-1:0] ctrl,       // 控制信号，包括add anchor ，delete anchor，输出信息等等
+  input  logic                [    COUNTER_WIDTH-1:0] tree_num,   // CSR, 指示当前主存中总的八叉树的数量
+  input  logic [DIMENTION-1:0][       DATA_WIDTH-1:0] cam_pos,    // CSR, 用于计算LOD中的激活层次，指示相机位置
+  input  logic                [    DATA_WIDTH-1:0]    dist_max,   // CSR, 用于计算LOD中的激活层次，指示最远的距离
+  input  logic                [    DATA_WIDTH-1:0]    s,          // CSR, 用于计算LOD中的激活层次，
+  //输入输出的握手信号 
+  input  logic                                        out_valid,  
+  output logic                                        out_ready,
+  input  logic                                        in_valid,
+  output logic                                        in_ready,
+  //与主存的sram接口
+  output logic                                        mem_sram_CEN,
+  output logic                [   ADDR_BUS_WIDTH-1:0] mem_sram_A,
+  output logic                [   DATA_BUS_WIDTH-1:0] mem_sram_D,
+  output logic                                        mem_sram_GWEN,
+  input  logic                [   DATA_BUS_WIDTH-1:0] mem_sram_Q
 );
 
-  // 定义两个个来源的选择编码
-  localparam   NAN                        = 0     ;
-  localparam   SEARCHER                   = 1     ;
-  localparam   UPDATER                    = 2     ;
+  // 定义两个个来源的选择编码，用于选通sram
+  localparam   NAN                        = 0;
+  localparam   SEARCHER                   = 1;
+  localparam   UPDATER                    = 2;
 
   // Control模块与其他模块之间的控制信号
   logic                      search_start;
@@ -67,7 +71,8 @@ module Octree #(
 
   Control #(
     .CONTROL_WIDTH(CONTROL_WIDTH),
-    .CHILDREN_NUM (CHILDREN_NUM)
+    .CHILDREN_NUM (CHILDREN_NUM),
+    .SELECT_WIDTH (SELECT_WIDTH)
   ) control_inst (
     .clk         (clk),
     .rst_n       (rst_n),
@@ -82,14 +87,21 @@ module Octree #(
   );
 
   Searcher #(
-    .DIMENTION        (DIMENTION),
-    .DATA_WIDTH       (DATA_WIDTH),
-    .DATA_BUS_WIDTH   (DATA_BUS_WIDTH),
-    .ADDR_BUS_WIDTH   (ADDR_BUS_WIDTH),
-    .ENCODE_ADDR_WIDTH(ENCODE_ADDR_WIDTH),
-    .FEATURE_LENTH    (FEATURE_LENTH),
-    .CHILDREN_NUM     (CHILDREN_NUM),
-    .TREE_LEVEL       (TREE_LEVEL)
+      .DIMENTION         (DIMENTION         ),
+      .DATA_WIDTH        (DATA_WIDTH        ),
+      .DATA_BUS_WIDTH    (DATA_BUS_WIDTH    ),
+      .ADDR_BUS_WIDTH    (ADDR_BUS_WIDTH    ),
+      .FEATURE_LENTH     (FEATURE_LENTH     ),
+      .CHILDREN_NUM      (CHILDREN_NUM      ),
+      .TREE_LEVEL        (TREE_LEVEL        ),
+      .SELECT_WIDTH      (SELECT_WIDTH      ),
+      .COUNTER_WIDTH     (COUNTER_WIDTH     ),
+      .LOG_CHILD_NUM     (LOG_CHILD_NUM     ),
+      .LOG_TREE_LEVEL    (LOG_TREE_LEVEL    ),
+      .TREE_ADDR_START   (TREE_ADDR_START   ),
+      .LOD_START_ADDR    (LOD_START_ADDR    ),
+      .FEATURE_START_ADDR(FEATURE_START_ADDR),
+      .ENCODE_ADDR_WIDTH (ENCODE_ADDR_WIDTH )
   ) searcher_inst (
     .clk          (clk),
     .rst_n        (rst_n),
@@ -100,11 +112,13 @@ module Octree #(
     .mem_sram_A   (searcher_sram_A),
     .mem_sram_D   (searcher_sram_D),
     .mem_sram_GWEN(searcher_sram_GWEN),
-    .mem_sram_Q   (searcher_sram_Q),     // 可根据需要连接
+    .mem_sram_Q   (searcher_sram_Q),     
     .feature_out  (feature_out),
     .out_valid    (out_valid),
     .out_ready    (out_ready),
-    .tree_num     ()
+    .dist_max     (dist_max),
+    .s            (s),
+    .tree_num     (tree_num) // 用于指示当前的sram中存了多少颗树
   );
 
   Updater #(
