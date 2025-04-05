@@ -332,6 +332,8 @@ module Delete_anchor #(
           del_done <= 1;
           delete_state <= IDLE;
           cnt <= 0;
+          mem_sram_GWEN <= 1;
+          mem_sram_CEN <= 1;
         end
         default: begin
         end
@@ -469,6 +471,8 @@ module Add_anchor #(
       endcase
     end
   end
+  
+  assign mem_sram_A = (add_state == WRITE_FEATURE)? {53'd0,hash_encoded_addr[10:0]} + {60'd0,cnt}:address_for_sram;
 
   //主要的核心逻辑，用于直接读写sram来更新tree结构
   always_ff @(posedge clk or negedge rst_n) begin : write_to_sram
@@ -479,6 +483,8 @@ module Add_anchor #(
       case (add_state)
         IDLE: begin
           cnt <= 0;
+          mem_sram_GWEN <=1;
+          mem_sram_CEN  <=1;
           if (add_anchor) begin
             //准备进行访存，准备好地址数据
             add_state         <= UPDATE_SELF;
@@ -489,7 +495,6 @@ module Add_anchor #(
           if (cnt == 0) begin
             //读新增的anchor同级的所有元素信息。
             mem_sram_CEN  <= 0;
-            mem_sram_A    <= address_for_sram;
             mem_sram_GWEN <= 1;
             cnt           <= cnt + 1;
           end else if (cnt == 1) begin
@@ -497,7 +502,6 @@ module Add_anchor #(
             //否则更新自己的那一位，然后直接进入下一阶段。
             cnt <= 0;
             mem_sram_CEN <= 0;
-            mem_sram_A <= address_for_sram;
             mem_sram_GWEN <= 0;
             mem_sram_D <= mem_sram_Q | (64'd1<<(actual_address[1:0]*2*CHILDREN_NUM+offset[level]*2+1));
             if (self_all_invalid) begin
@@ -516,7 +520,6 @@ module Add_anchor #(
           if (cnt == 0) begin
             //读父亲节点的anchor同级的所有元素信息
             mem_sram_CEN  <= 0;
-            mem_sram_A    <= address_for_sram;
             mem_sram_GWEN <= 1;
             cnt           <= cnt + 1;
           end else if (cnt == 1) begin
@@ -524,7 +527,6 @@ module Add_anchor #(
             //如果不是，则写入对应的孩子位，然后返回。cnt清零
             cnt <= 0;
             mem_sram_CEN <= 0;
-            mem_sram_A <= address_for_sram;
             mem_sram_GWEN <= 0;
             mem_sram_D <= mem_sram_Q | (64'd1<<(actual_address[1:0]*2*CHILDREN_NUM+offset[level]*2));
             if (parent_all_invalid) begin 
@@ -537,6 +539,7 @@ module Add_anchor #(
               end
             end else begin
               add_state <= WRITE_FEATURE;
+              addr_to_calculate <= reg_pos;
             end
           end
         end
@@ -546,9 +549,10 @@ module Add_anchor #(
             add_done <= 1;
             add_state <= IDLE;
             cnt<=0;
+            mem_sram_CEN <= 1;
+            mem_sram_GWEN <= 1;
           end else begin
             mem_sram_CEN <= 0;
-            mem_sram_A    <= hash_encoded_addr + {60'd0,cnt}; // TODO：根据原码生成hash encoded 代码
             mem_sram_D   <= reg_feature_in[cnt];
             mem_sram_GWEN <= 0;
             cnt <= cnt + 1;

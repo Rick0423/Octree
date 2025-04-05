@@ -31,14 +31,16 @@ module Octree #(
   //输入输出的握手信号 
   input  logic                                        out_valid,  
   output logic                                        out_ready,
-  input  logic                                        in_valid,
-  output logic                                        in_ready,
   //与主存的sram接口
   output logic                                        mem_sram_CEN,
   output logic                [   ADDR_BUS_WIDTH-1:0] mem_sram_A,
   output logic                [   DATA_BUS_WIDTH-1:0] mem_sram_D,
   output logic                                        mem_sram_GWEN,
-  input  logic                [   DATA_BUS_WIDTH-1:0] mem_sram_Q
+  input  logic                [   DATA_BUS_WIDTH-1:0] mem_sram_Q,
+  //标识操作结束的信号
+  output logic                      search_done,
+  output logic                      add_done,
+  output logic                      del_done             
 );
 
   // 定义两个个来源的选择编码，用于选通sram
@@ -50,9 +52,10 @@ module Octree #(
   logic                      search_start;
   logic                      add_anchor;
   logic                      del_anchor;
-  logic                      search_done;
-  logic                      add_done;
-  logic                      del_done;
+  //输出到模块外部
+  //logic                      search_done;
+  //logic                      add_done;
+  //logic                      del_done;
   logic [  SELECT_WIDTH-1:0] mem_select;
 
   // Searcher模块接口信号

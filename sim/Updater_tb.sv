@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 
 // Updater 的 testbench
-module tb_Updater;
+module Updater_tb;
 
   // 参数设置（与 Updater 模块默认参数一致）
   localparam DIMENTION          = 3;
@@ -16,7 +16,7 @@ module tb_Updater;
   localparam TREE_LEVEL         = 5;
   localparam LOG_TREE_LEVEL     = 3;
   localparam TREE_ADDR_START    = 4;
-  localparam FEATURE_ADDR_START = 4;
+  localparam FEATURE_START_ADDR = 4;
   localparam ENCODE_ADDR_WIDTH  = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL;
   
   // 信号定义
@@ -50,7 +50,7 @@ module tb_Updater;
     .TREE_LEVEL         (TREE_LEVEL),
     .LOG_TREE_LEVEL     (LOG_TREE_LEVEL),
     .TREE_ADDR_START    (TREE_ADDR_START),
-    .FEATURE_ADDR_START (FEATURE_ADDR_START),
+    .FEATURE_START_ADDR (FEATURE_START_ADDR),
     .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH)
   ) uut (
     .clk            (clk),
@@ -72,14 +72,14 @@ module tb_Updater;
   sram 
   #(
       .DATA_WIDTH (DATA_BUS_WIDTH ),
-      .ADDR_WIDTH (9 ),
-      .MEM_DEPTH  (440      )
+      .ADDR_WIDTH (ADDR_BUS_WIDTH ),
+      .MEM_DEPTH  (20280      )
   )
   u_sram(
       .clk      (clk      ),
       .rst_n    (rst_n),
       .mem_sram_CEN (mem_sram_CEN ),
-      .mem_sram_A (mem_sram_A[8:0] ),
+      .mem_sram_A (mem_sram_A),
       .mem_sram_D  (mem_sram_D ),
       .mem_sram_GWEN (mem_sram_GWEN ),
       .mem_sram_Q  (mem_sram_Q )
@@ -127,12 +127,17 @@ module tb_Updater;
     //#100;
     
     // 模拟 del_anchor 操作：
-    pos_encode = {3'd3,3'd1,3'd0,3'd2,3'd3,3'd0};
+    pos_encode = {3'd2,3'd0,3'd0,3'd3,3'd1,3'd0};
     del_anchor = 1;
     #10;
     del_anchor = 0;
-    //wait(del_done);
-    
+    wait(del_done);
+    #20;
+    add_anchor = 1;
+    for(int i=0;i<9;i+=1)begin
+      feature_in = 64'd10 + {32'd0,i};  
+      #10; add_anchor =0 ;
+    end
     #200;
     $finish;
   end

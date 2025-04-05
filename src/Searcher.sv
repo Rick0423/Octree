@@ -135,6 +135,7 @@ module Searcher #(
           if (lod_ready) begin
             searcher_state <= TREE_SEARCH;
             mem_select     <= SRAM_SEARCH;
+            tree_search_start <= 1;
             cal_lod        <= 0;
           end else begin
             cal_lod    <= 1;
@@ -152,7 +153,7 @@ module Searcher #(
               searcher_state <= LOD;
             end
           end else begin
-            tree_search_start <= 1;
+            tree_search_start <= 0;
           end
         end
         default: begin
@@ -228,39 +229,46 @@ module Searcher #(
   
 endmodule
 
-//module lod_compute #(
-//  parameter DIMENTION      = 3,
-//  parameter DATA_WIDTH     = 16,
-//  parameter DATA_BUS_WIDTH = 64,
-//  parameter ADDR_BUS_WIDTH = 64,
-//  parameter TREE_LEVEL     = 8,
-//  parameter LOD_START_ADDR = 1
-//) (
-//  input  logic                                     clk,
-//  input  logic                                     rst_n,
-//  input  logic                                     cal_lod,
-//  output logic                                     lod_ready,
-//  output logic                                     mem_sram_CEN,
-//  output logic                [ADDR_BUS_WIDTH-1:0] mem_sram_A,
-//  output logic                [DATA_BUS_WIDTH-1:0] mem_sram_D,
-//  output logic                                     mem_sram_GWEN,
-//  input  logic                [DATA_BUS_WIDTH-1:0] mem_sram_Q,
-//  input  logic [DIMENTION-1:0][    DATA_WIDTH-1:0] cam_pos,
-//  input  logic                [    DATA_WIDTH-1:0] current_tree_count,
-//  output logic                [    TREE_LEVEL-1:0] lod_active
-//);
-//  //在SRAM中保存有这个Octree的position和每一层的delta L信息（一整个Octree的所有anchor共用同一个position，在同一个level的所有anchor共用一个delta L）
-//  //在SRAM中的数据按照这个格式存储：以64个为一组，每一个octree保存3个64.
-//  // 1、  ｜16 (x)        | 16 (y)    | 16 (z)    | 16(layer 1 delta L)| 
-//  // 2、  | 16(layer 2)   |(layer 3)  | (layer 4) |(layer5)           |
-//  //SRAM接口，直接操作读写即可，读写地址为    LOD_START_ADDR+2*current_tree_count 例如当current_tree_count为0 的时候需要读的地址就是LOD_START_ADDR，current_tree_count为5的时候，需要读的地址就是LOD_START_ADDR+3*5
-//  //lod_active 1-1-0-0-0   表示level 0 和 1的有效，其余均无效； 1-1-1-1-0-0-0-0     表示 level 0-3有效；
-//  //lod_active 1-0-0-1-0   表示level 0 和 3的anchor有效，其余均无效（理论上，在delta L巨大的场景下有可能出现）
-//
-//  assign mem_sram_GWEN = 1;
-//  assign mem_sram_CEN  = (cal_lod) ? 0 : 1;
-//
-//endmodule
+module lod_compute #(
+  parameter DIMENTION      = 3,
+  parameter DATA_WIDTH     = 16,
+  parameter DATA_BUS_WIDTH = 64,
+  parameter ADDR_BUS_WIDTH = 64,
+  parameter TREE_LEVEL     = 5 ,
+  parameter LOD_START_ADDR = 1
+) (
+  input  logic                                     clk,
+  input  logic                                     rst_n,
+  input  logic                                     cal_lod,
+  output logic                                     lod_ready,
+  output logic                                     mem_sram_CEN,
+  output logic                [ADDR_BUS_WIDTH-1:0] mem_sram_A,
+  output logic                [DATA_BUS_WIDTH-1:0] mem_sram_D,
+  output logic                                     mem_sram_GWEN,
+  input  logic                [DATA_BUS_WIDTH-1:0] mem_sram_Q,
+  input  logic [DIMENTION-1:0][    DATA_WIDTH-1:0] cam_pos,
+  input  logic                [    DATA_WIDTH-1:0] current_tree_count,
+  output logic                [    TREE_LEVEL-1:0] lod_active,
+  input logic[DATA_WIDTH-1:0]                      s,
+  input logic[DATA_WIDTH-1:0]                      dist_max
+);
+  //在SRAM中保存有这个Octree的position和每一层的delta L信息（一整个Octree的所有anchor共用同一个position，在同一个level的所有anchor共用一个delta L）
+  //在SRAM中的数据按照这个格式存储：以64个为一组，每一个octree保存3个64.
+  // 1、  ｜16 (x)        | 16 (y)    | 16 (z)    | 16(layer 1 delta L)| 
+  // 2、  | 16(layer 2)   |(layer 3)  | (layer 4) |(layer5)           |
+  //SRAM接口，直接操作读写即可，读写地址为    LOD_START_ADDR+2*current_tree_count 例如当current_tree_count为0 的时候需要读的地址就是LOD_START_ADDR，current_tree_count为5的时候，需要读的地址就是LOD_START_ADDR+3*5
+  //lod_active 1-1-0-0-0   表示level 0 和 1的有效，其余均无效； 1-1-1-1-0-0-0-0     表示 level 0-3有效；
+  //lod_active 1-0-0-1-0   表示level 0 和 3的anchor有效，其余均无效（理论上，在delta L巨大的场景下有可能出现）
+
+  assign mem_sram_GWEN = 1;
+  assign mem_sram_A    = 0;
+  assign mem_sram_D    = 0;
+  assign mem_sram_CEN  = (cal_lod) ? 0 : 1;
+  assign lod_active    = 5'b00111;
+  assign lod_ready     = 1;
+
+
+endmodule
 
 module tree_search #(
   parameter DIMENTION         = 3,
@@ -301,7 +309,7 @@ module tree_search #(
   output logic                      out_ready
 );
   localparam IDLE = 0, SEARCH = 1, OUT = 2, DONE = 3;
-  localparam FIFO_IDLE=0,FIFO_SEARCH=1,FIFO_OUTPUT=2,FIFO_SEARCH_THIS_ANCHOR=3,FIFO_READY_OUT=4,FIFO_OUTPUT_THIS_ANCHOR=5;
+  localparam FIFO_IDLE=0,FIFO_SEARCH=1,FIFO_OUTPUT=2,FIFO_SEARCH_THIS_ANCHOR=3,FIFO_READY_OUT=4,FIFO_OUTPUT_THIS_ANCHOR=5,FIFO_STALL_1_C=6;
   localparam [TREE_LEVEL-1:0][DATA_BUS_WIDTH-1:0] ADDR_VARY = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
   // Prime numbers for hash calculation
   localparam  int PRIMES [4:0] = {2099719, 3867465, 807545, 2654435, 1};  // 质数数组，增强哈希随机性
@@ -328,10 +336,9 @@ module tree_search #(
   logic [LOG_CHILD_NUM:0]                     child_ones_count;
 
   //用于标识流水线中的数据是否有效。
-  logic                         fifo_1_output_valid;//从fifo中读出的数据是否有效
-  logic                         fifo_2_output_valid;//从fifo中读出的数据是否有效
+  logic                         offset_level_valid;
   logic                         mem_read_data_valid;//访存拿到的数据是否有效
-  logic                         mem_stalled_1_cycle;
+  logic                         mem_read_data_valid_pre;
   logic                         write_fifo_data_valid;//准备写进fifo的数据是否有效
   
 
@@ -357,6 +364,7 @@ module tree_search #(
   //实际地址计算过程中的使用的数据，方便debug地址线是否正确。
   logic [ 2:0]                                      level;
   logic [ ADDR_BUS_WIDTH-1:0]                                      offset [4:0];
+  //加_ 表示是组合逻辑信号，组合路径太长，插入寄存器，level和offset
   logic [   ADDR_BUS_WIDTH-1:0]                     address_part_;
   logic [   ADDR_BUS_WIDTH-1:0]                     actual_address;
   logic [   ADDR_BUS_WIDTH-1:0]                     address_for_sram;
@@ -403,7 +411,7 @@ module tree_search #(
     if(rst_n == 0) begin
       self_data <= 0;
       child_data <= 0;
-    end else if(mem_stalled_1_cycle) begin   
+    end else if(mem_read_data_valid) begin   
       for (int i = 0; i < CHILDREN_NUM; i++) begin : bit_separation
             child_data[i] <= mem_sram_Q[anchor_interested*CHILDREN_NUM*2+2*i];     // 提取偶数位
             self_data[i]  <= mem_sram_Q[anchor_interested*CHILDREN_NUM*2+2*i + 1]; // 提取奇数位
@@ -481,8 +489,6 @@ module tree_search #(
       fifo_cnt   <= 0;
       fifo_1_rd_en <= 0;
       fifo_2_rd_en <= 0;
-      fifo_1_output_valid <= 0;
-      fifo_2_output_valid <= 0;
       first           <= 1;
     end else begin
       case (fifo_state)
@@ -493,39 +499,30 @@ module tree_search #(
           fifo_cnt   <= 0;
           fifo_1_rd_en <= 0;
           fifo_2_rd_en <= 0;
-          fifo_1_output_valid <= 0;
-          fifo_2_output_valid <= 0;
           first           <= 1;
         end
         FIFO_SEARCH:begin
           if(searching_done) begin
             fifo_state <= FIFO_READY_OUT;
+            fifo_1_rd_en <= 0; 
           end
           if(fifo_1_empty == 0) begin
-            if(fifo_cnt ==0)begin
               fifo_1_rd_en <= 1;
-              fifo_cnt <= fifo_cnt +1 ;
-            end else begin
-              first    <= 0;
-              fifo_cnt <= 0;
-              fifo_1_rd_en <=0;
-              fifo_state <= FIFO_SEARCH_THIS_ANCHOR;
-              fifo_1_output_valid <= 1 ;
-            end
+              fifo_state <= FIFO_STALL_1_C;
+              first <=0;
           end else begin
             fifo_1_rd_en <= 0;
           end
         end
+        FIFO_STALL_1_C:begin
+          fifo_state <= FIFO_SEARCH_THIS_ANCHOR;
+          fifo_1_rd_en <= 0;
+        end
         FIFO_SEARCH_THIS_ANCHOR:begin
           if(fifo_cnt == r_fifo_1_anchor_num-1)begin
-            if(fifo_1_empty == 0) begin
-              fifo_1_rd_en <= 1;
-              fifo_cnt <= 0;
-              fifo_1_output_valid <= 1;
-            end else begin
+              fifo_1_rd_en <= 0;
               fifo_state <= SEARCH;
-              fifo_1_output_valid <=0 ;
-            end
+              fifo_cnt <= 0;
           end else begin
             fifo_1_rd_en <= 0;
             fifo_cnt <= fifo_cnt +1;
@@ -561,12 +558,10 @@ module tree_search #(
           end else begin
             fifo_2_rd_en <= 0;
             if(in_anchor_cnt == FEATURE_LENTH)begin
-              fifo_2_output_valid <= 1;//
               fifo_cnt <= fifo_cnt+1;
               in_anchor_cnt <= 1;
             end else  begin
               in_anchor_cnt <= in_anchor_cnt+1;
-              fifo_2_output_valid <= 1;
             end
           end
         end
@@ -583,29 +578,29 @@ module tree_search #(
       mem_sram_CEN        <= 1;
       mem_sram_D          <= 0;
       mem_sram_GWEN       <= 1;
-      mem_read_data_valid <= 0;
     end else begin
       if (tree_search_start) begin
         mem_sram_CEN        <= 0;
         mem_sram_D          <= 0;
         mem_sram_GWEN       <= 1;
-        mem_read_data_valid <= 1;
       end else begin
         if(fifo_1_rd_en | fifo_2_rd_en | ((fifo_state == FIFO_SEARCH_THIS_ANCHOR) &(fifo_cnt != r_fifo_1_anchor_num-1)) 
                         | ((fifo_state == FIFO_OUTPUT_THIS_ANCHOR) &((fifo_cnt != r_fifo_2_anchor_num-1)|(in_anchor_cnt != FEATURE_LENTH)))) begin
           mem_sram_CEN        <= 0;
           mem_sram_D          <= 0;
           mem_sram_GWEN       <= 1;
-          mem_read_data_valid <= 1;
         end else begin
+          mem_sram_D          <= 0;
           mem_sram_CEN        <= 1;
           mem_sram_GWEN       <= 1;
-          mem_read_data_valid <= 0;
         end
       end
     end
   end
 
+  assign mem_sram_A = address_for_sram;
+  assign feature_out= (fifo_state == FIFO_OUTPUT_THIS_ANCHOR)?mem_sram_Q:0;
+  assign mem_read_data_valid_pre = ~mem_sram_CEN;
   //准备地址相关信息 根据当前的fifo cnt 准备好要抓取的anchor的位置。
   always_comb begin : gen_level_offset_from_fifo_data
     if (tree_state == SEARCH) begin
@@ -614,7 +609,7 @@ module tree_search #(
       level = (first)?0:fifo_1_rdata[FIFO_DATA_WIDTH-1-:3]+1;
       for (int a = 0; a < TREE_LEVEL; a += 1) begin
         if (a == {29'd0, fifo_1_rdata[FIFO_DATA_WIDTH-1-:3]} ) begin
-          offset[a]={61'd0,fifo_1_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-fifo_cnt*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
+          offset[a]={61'd0,fifo_1_rdata[LOG_CHILD_NUM+(fifo_cnt+1)*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
         end else begin
           offset[a] ={61'd0, fifo_1_rdata[FIFO_DATA_WIDTH-LOG_TREE_LEVEL-1-a*LOG_CHILD_NUM-:LOG_CHILD_NUM]};
         end
@@ -633,7 +628,7 @@ module tree_search #(
     end else begin
       r_fifo_1_anchor_num = 0;
       r_fifo_2_anchor_num = 0; 
-      level = 0;
+      level= 0;
       for (int a = 0; a < TREE_LEVEL; a += 1) offset[a] = 0;
     end
   end
@@ -705,8 +700,6 @@ module tree_search #(
     end
   end
 
-  assign mem_sram_A = address_for_sram;
-  assign feature_out= (fifo_state == FIFO_OUTPUT_THIS_ANCHOR)?mem_sram_Q:0;
 
   //生成总的状态转移控制信号
   always_ff @( posedge clk or rst_n ) begin : gen_extra_data
@@ -714,7 +707,7 @@ module tree_search #(
       searching_done <= 0;
       outing_done    <= 0;
     end else begin
-      if((tree_state == SEARCH) & fifo_1_empty & ((write_fifo_data_valid+mem_stalled_1_cycle+mem_read_data_valid+fifo_1_wr_en )==0))begin
+      if((tree_state == SEARCH) & fifo_1_empty & ((write_fifo_data_valid+mem_read_data_valid_pre+mem_read_data_valid+fifo_1_wr_en )==0))begin
         //当搜索fifo空，并且流水线中不存在任何有效数据时，搜索结束
         searching_done <= 1;
       end else if((tree_state == OUT) & fifo_2_empty& (fifo_state ==FIFO_IDLE) )begin
@@ -730,9 +723,10 @@ module tree_search #(
   always_ff @(posedge clk or negedge rst_n) begin : valid_signal_in_pipline
     if (rst_n == 0) begin
       write_fifo_data_valid <= 0;
+      mem_read_data_valid   <= 0;
     end else begin
-      write_fifo_data_valid <= mem_stalled_1_cycle;
-      mem_stalled_1_cycle   <= mem_read_data_valid;
+      write_fifo_data_valid <= mem_read_data_valid;
+      mem_read_data_valid   <=  mem_read_data_valid_pre;
     end
   end
 

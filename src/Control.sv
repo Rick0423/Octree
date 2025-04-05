@@ -50,10 +50,13 @@ module Control #(
         IDLE: begin
           if (ctrl == SEARCH) begin
             state <= SEARCHING;
+            search_start <= 1'b1;
           end else if (ctrl == ADD) begin
             state <= ADDING;
+            add_anchor   <= 1'b1;
           end else if (ctrl == DEL) begin
             state <= DELETING;
+            del_anchor   <= 1'b1;
           end else begin
             state        <= IDLE;
             search_start <= 1'b0;
@@ -66,7 +69,7 @@ module Control #(
           if (search_done) begin
             state <= IDLE;
           end else begin
-            search_start <= 1'b1;
+            search_start <= 1'b0;
             add_anchor   <= 1'b0;
             del_anchor   <= 1'b0;
             mem_select   <= SEARCHER;
@@ -77,7 +80,7 @@ module Control #(
             state <= IDLE;
           end else begin
             search_start <= 1'b0;
-            add_anchor   <= 1'b1;
+            add_anchor   <= 1'b0;
             del_anchor   <= 1'b0;
             mem_select   <= UPDATER;
           end
@@ -88,7 +91,7 @@ module Control #(
           end else begin
             search_start <= 1'b0;
             add_anchor   <= 1'b0;
-            del_anchor   <= 1'b1;
+            del_anchor   <= 1'b0;
             mem_select   <= UPDATER;
           end
         end

@@ -125,7 +125,7 @@ tree_search #(
 
     // 模拟输出有效信号
     wait(out_ready);
-    #100;
+    #10;
     out_valid = 1;
     #10;
     out_valid = 0;
@@ -134,7 +134,7 @@ tree_search #(
     wait(tree_search_done);
 
     // 结束仿真
-    #500;
+    #50
     $finish;
   end
 
@@ -147,8 +147,8 @@ tree_search #(
 endmodule
 
 module sram #(
-    parameter ADDR_WIDTH = 16,  // Address bus width
-    parameter DATA_WIDTH = 32,  // Data bus width
+    parameter ADDR_WIDTH = 64,  // Address bus width
+    parameter DATA_WIDTH = 64,  // Data bus width
     parameter MEM_DEPTH = 1 << ADDR_WIDTH, // Memory depth
     parameter INIT_FILE = "sram_init.txt" // Initialization file
 ) (

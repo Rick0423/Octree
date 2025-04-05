@@ -93,7 +93,7 @@ def fast_hash(pos_grid):
 # 测试示例
 def test_hash():
     data1_level = 2
-    data1_offsets = [0, 0, 0, 0, 0]
+    data1_offsets = [0, 0, 3, 0, 0]
     
     data2_level = 4
     data2_offsets = [1, 7, 7, 7, 7]
