@@ -363,14 +363,15 @@ module Delete_anchor #(
     end
   endgenerate
 
-  // 计算实际地址
   always_comb begin
     address_part_ = 0;
-    for (int i = 0; i < level; i++) begin
-      if (i == 0) begin
-        address_part_ += 586 * offset[i];
-      end else begin
-        address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i ));
+    for (int i = 0; i < TREE_LEVEL; i += 1) begin
+      if (i < level) begin
+        if (i == 0) begin
+          address_part_ += 586 * offset[i];
+        end else begin
+          address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i));
+        end
       end
     end
     actual_address   = address_part_ + ADDR_VARY[level] + TREE_ADDR_START;
@@ -616,21 +617,20 @@ module Add_anchor #(
       assign offset[a] = {61'd0,addr_to_calculate[LOG_CHILD_NUM*TREE_LEVEL-1-a*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
     end
   endgenerate
-
   // 计算实际地址
   always_comb begin
     address_part_ = 0;
-    for (int i = 0; i < level; i++) begin
-      if (i == 0) begin
-        address_part_ += 586 * offset[i];
-      end else begin
-        address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i - 1));
-      end
+    for (int i = 0; i < TREE_LEVEL; i += 1) begin
+      if (i < level) begin
+        if (i == 0) begin
+          address_part_ += 586 * offset[i];
+        end else begin
+          address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i));
+        end
+      end 
     end
     actual_address   = address_part_ + ADDR_VARY[level] + TREE_ADDR_START;
     address_for_sram = {2'b0, actual_address[ADDR_BUS_WIDTH-1:2]};
     //same_addr        = (address_for_sram == last_addr_read) ? 1 : 0;
   end
-
-
 endmodule

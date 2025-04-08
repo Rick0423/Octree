@@ -9,14 +9,14 @@ module Updater_tb;
   localparam DATA_BUS_WIDTH     = 64;
   localparam ADDR_BUS_WIDTH     = 64;
   localparam CONTROL_WIDTH      = 3;
-  localparam SELECT_WIDTH       = 2;
+  localparam SELECT_WIDTH       = 3;
   localparam FEATURE_LENTH      = 9;
   localparam CHILDREN_NUM       = 8;
   localparam LOG_CHILD_NUM      = 3;
   localparam TREE_LEVEL         = 5;
   localparam LOG_TREE_LEVEL     = 3;
-  localparam TREE_ADDR_START    = 4;
-  localparam FEATURE_START_ADDR = 4;
+  localparam TREE_ADDR_START    = 0;
+  localparam FEATURE_START_ADDR = 1200;
   localparam ENCODE_ADDR_WIDTH  = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL;
   
   // 信号定义

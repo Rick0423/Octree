@@ -1,31 +1,12 @@
 
 `timescale 1ns / 1ps
-//////////////////////////////////////////////////////////////////////////////////
-// Company: 
-// Engineer: 
-// 
-// Create Date: 2025/03/27 01:33:51
-// Design Name: 
-// Module Name: lod_compute
-// Project Name: 
-// Target Devices: 
-// Tool Versions: 
-// Description: 
-// 
-// Dependencies: 
-// 
-// Revision:
-// Revision 0.01 - File Created
-// Additional Comments:
-// 
-//////////////////////////////////////////////////////////////////////////////////
 module fp16_minus(input logic clk, input logic [15:0] floatA, input logic [15:0] floatB, output logic [15:0] minus_out);
     logic sign;
     logic signed [5:0] exponent; // fifth bit is sign
     logic [9:0] mantissa;
     logic [4:0] exponentA, exponentB;
     logic [10:0] fractionA, fractionB, fraction; // fraction = {1, mantissa}
-    logic [7:0] shiftAmount;
+    logic [4:0] shiftAmount;
     logic cout;
     logic [15:0] floatB_minus;
     always @(posedge clk) begin
@@ -36,7 +17,7 @@ module fp16_minus(input logic clk, input logic [15:0] floatA, input logic [15:0]
     fractionA = {1'b1, floatA[9:0]}; // 将隐藏位表示出来进行计算
     fractionB = {1'b1, floatB_minus[9:0]}; // 同理
 
-    exponent = exponentA;
+    exponent = {1'b0,exponentA};
 
     // 特殊情况处理
     if (floatA == 0) begin // floatA = 0
@@ -50,11 +31,11 @@ module fp16_minus(input logic clk, input logic [15:0] floatA, input logic [15:0]
         if (exponentB > exponentA) begin
             shiftAmount = exponentB - exponentA;
             fractionA = fractionA >> shiftAmount; // 尾数右移
-            exponent = exponentB;
+            exponent = {1'b0,exponentB};
         end else if (exponentA > exponentB) begin
             shiftAmount = exponentA - exponentB;
             fractionB = fractionB >> shiftAmount;
-            exponent = exponentA;
+            exponent = {1'b0,exponentA};
         end
 
         // 同符号相加
@@ -113,7 +94,7 @@ module fp16_minus(input logic clk, input logic [15:0] floatA, input logic [15:0]
         end
 
         mantissa = fraction[9:0];
-        if (exponent == 1'b1) begin // 指数溢出处理
+        if (exponent == 6'b000001) begin // 指数溢出处理
             minus_out= 16'b0000000000000000; // 返回零
         end else begin
             minus_out= {sign, exponent[4:0], mantissa}; // 返回结果
@@ -127,7 +108,7 @@ module fp16_add(input logic clk, input logic [15:0] floatA, input logic [15:0] f
     logic [9:0] mantissa;
     logic [4:0] exponentA, exponentB;
     logic [10:0] fractionA, fractionB, fraction; // fraction = {1, mantissa}
-    logic [7:0] shiftAmount;
+    logic [4:0] shiftAmount;
     logic cout;
     ;
     always @(posedge clk) begin
@@ -138,7 +119,7 @@ module fp16_add(input logic clk, input logic [15:0] floatA, input logic [15:0] f
     fractionA = {1'b1, floatA[9:0]}; // 将隐藏位表示出来进行计算
     fractionB = {1'b1, floatB[9:0]}; // 同理
 
-    exponent = exponentA;
+    exponent = {1'b0,exponentA};
 
     // 特殊情况处理
     if (floatA == 0) begin // floatA = 0
@@ -152,11 +133,11 @@ module fp16_add(input logic clk, input logic [15:0] floatA, input logic [15:0] f
         if (exponentB > exponentA) begin
             shiftAmount = exponentB - exponentA;
             fractionA = fractionA >> shiftAmount; // 尾数右移
-            exponent = exponentB;
+            exponent = {1'b0,exponentB};
         end else if (exponentA > exponentB) begin
             shiftAmount = exponentA - exponentB;
             fractionB = fractionB >> shiftAmount;
-            exponent = exponentA;
+            exponent = {1'b0,exponentA};
         end
 
         // 同符号相加
@@ -215,7 +196,7 @@ module fp16_add(input logic clk, input logic [15:0] floatA, input logic [15:0] f
         end
 
         mantissa = fraction[9:0];
-        if (exponent == 1'b1) begin // 指数溢出处理
+        if (exponent == 6'b000001) begin // 指数溢出处理
             add_out= 16'b0000000000000000; // 返回零
         end else begin
             add_out= {sign, exponent[4:0], mantissa}; // 返回结果
@@ -223,6 +204,7 @@ module fp16_add(input logic clk, input logic [15:0] floatA, input logic [15:0] f
     end
     end
 endmodule
+
 
 
 module fp16_mult(input logic clk, input logic [15:0] floatA, input logic [15:0] floatB, output logic [15:0] mult_out);
@@ -280,7 +262,7 @@ module fp16_mult(input logic clk, input logic [15:0] floatA, input logic [15:0] 
         mantissa = fraction[21:12];
 
         // 指数溢出处理
-        if (exponent == 1'b1) begin // exponent is negative
+        if (exponent == 6'b000001) begin // exponent is negative
             mult_out=16'b0000000000000000; // 返回零
         end else begin
             mult_out={sign, exponent[4:0], mantissa}; // 返回结果
@@ -296,15 +278,16 @@ module fp16_log2(input logic clk, input logic [15:0] fpin, output logic [15:0] r
     logic [15:0] result_int;
     
     logic [15:0] result_fp;
-    logic [10:0] fpin_fp;
+    logic [9:0] fpin_fp;
     logic [4:0] mid;
     logic [15:0] result_fp_sub, result_sub;
-    
+    logic [15:0] result_pre;
     
     always @(posedge clk) begin
     mid=fpin[14:10]-5'd15;
     //result_int ={1'b0, mid, 10'b0};
     fpin_fp=fpin[9:0];
+    
     case(fpin_fp) inside
         [0:22]: result_fp<=16'b0011110000000000;
         [23:69]: result_fp<=16'b0011110001000000;
@@ -346,7 +329,10 @@ module fp16_log2(input logic clk, input logic [15:0] fpin, output logic [15:0] r
     
     end
     fp16_minus fp1(clk, result_fp,16'b0011110000000000, result_fp_sub);
-    fp16_add fp2(clk, result_int, result_fp_sub, result);
+    fp16_add fp2(clk, result_int, result_fp_sub, result_pre);
+    always @(*) begin
+        result = (fpin[15]) ? 16'b0111110000000001 : result_pre;
+    end
 endmodule
 
 module lod_compute #(
@@ -391,79 +377,133 @@ module lod_compute #(
     //计算中针对一个octree只计算一次，默认这个octree中
     assign mem_sram_GWEN = 1;
     assign mem_sram_CEN  = (cal_lod)?0:1;
+    assign mem_sram_D = 0;
     logic [4:0] lod_active_temp;
     logic [DIMENTION-1:0][DATA_WIDTH-1:0] oct_pos;
-    logic [7:0][DATA_WIDTH-1:0] oct_lay_dL;
-    logic [15:0] dist_pow_x,dist_pow_y,dist_pow_z,total_dist_pow,log_dist_max,log_dist_max_pow2,log_total_dist,log_total_dist_pow,log_s;
+    logic [4:0][DATA_WIDTH-1:0] oct_lay_dL;
+    logic [15:0] dist_pow_x,dist_pow_y,dist_pow_z,log_dist_max_pow2;
     logic [15:0] i_to_fp16_cut,int_layer_1,int_layer_2,int_layer_3,int_layer_4,int_layer_5,int_layer_6,int_layer_7,int_layer_8;
-    logic [15:0] pre_int_layer,int_layer;
-    logic [15:0] minus_1,minus_2,minus_3,minus_4,minus_5,minus_6,minus_7,minus_8;
+    logic [15:0] int_layer;
+    logic [15:0] minus_1,minus_2,minus_3,minus_4,minus_5;
     typedef enum logic [3:0] {
-        idle=4'b000,r0=4'b0001,r1=4'b0010,r2=4'b0011,r3=4'b0100,c0=4'b0101,c1=4'b0110,c2=4'b0111,c3=4'b1000,c4=4'b1001,c5=4'b1010,o0=4'b1011
+        idle=4'b000,r0=4'b0001,r1=4'b0010,r2=4'b0011,r3=4'b0100,c0=4'b0101,c1=4'b0110,c2=4'b0111,c3=4'b1000,c4=4'b1001,c5=4'b1010,o0=4'b1011, t0=4'b1110,t1=4'b1111
     } state_t;
     state_t state, next_state;
-    int flag1,flag2;
+    
     logic te;
     logic [15:0] fp22_temp, fp11_temp,fp00_temp,dist_x_pow_temp,dist_y_pow_temp,dist_z_pow_temp;
-    fp16_minus fp22_minus(clk, cam_pos[2],oct_pos[2],fp22_temp);
+    fp16_minus fp22_minus(clk, cam_pos[2],oct_pos[0],fp22_temp);
     fp16_mult fp22_mult(clk,fp22_temp,fp22_temp,dist_x_pow_temp);
     fp16_minus fp11_minus(clk, cam_pos[1],oct_pos[1],fp11_temp);
     fp16_mult fp11_mult(clk,fp11_temp,fp11_temp,dist_y_pow_temp);
-    fp16_minus fp00_minus(clk, cam_pos[0],oct_pos[0],fp00_temp);
+    fp16_minus fp00_minus(clk, cam_pos[0],oct_pos[2],fp00_temp);
     fp16_mult fp00_mult(clk,fp00_temp,fp00_temp,dist_z_pow_temp);
     logic [15:0] total_dist_pow_temp1, total_dist_pow_temp2;
-    fp16_add total_dist_add(clk, dist_pow_x, dist_pow_y, total_dist_pow_temp1);
-    fp16_add total_dist_add_1(clk, total_dist_pow_temp1, dist_pow_z, total_dist_pow_temp2);
+    fp16_add total_dist_add(clk, dist_x_pow_temp, dist_y_pow_temp, total_dist_pow_temp1);
+    fp16_add total_dist_add_1(clk, total_dist_pow_temp1, dist_z_pow_temp, total_dist_pow_temp2);
     logic [15:0] log_dist_max_temp,log_total_dist_pow_temp, log_s_temp;
     fp16_log2 fp_log_dist_max(clk, dist_max, log_dist_max_temp);
-    fp16_log2 fp_log_total_dist(clk, total_dist_pow, log_total_dist_pow_temp);
+    fp16_log2 fp_log_total_dist(clk, total_dist_pow_temp2, log_total_dist_pow_temp);
     fp16_log2 fp_log_s(clk, s,log_s_temp);
     logic [15:0] log_total_dist_temp;
-    fp16_mult fp_mult_log_total_dist(clk,log_total_dist_pow,16'b0011100000000000,log_total_dist_temp);
+    fp16_mult fp_mult_log_total_dist(clk,log_total_dist_pow_temp,16'b0011100000000000,log_total_dist_temp);
     logic [15:0] pre_int_layer_temp1, pre_int_layer_temp2;
-    fp16_minus fp_minus_pre_int_temp1(clk, log_dist_max, log_total_dist, pre_int_layer_temp1);
-    fp16_minus fp_minus_pre_int_temp2(clk, pre_int_layer_temp1, log_s, pre_int_layer_temp2);
+    fp16_minus fp_minus_pre_int_temp1(clk, log_dist_max_temp, log_total_dist_temp, pre_int_layer_temp1);
+    fp16_minus fp_minus_pre_int_temp2(clk, pre_int_layer_temp1, log_s_temp, pre_int_layer_temp2);
     logic [15:0] minus_1_temp1, minus_1_temp2,minus_2_temp1, minus_2_temp2,minus_3_temp1, minus_3_temp2,minus_4_temp1, minus_4_temp2,minus_5_temp1, minus_5_temp2;
-    fp16_add temp1_1(clk, pre_int_layer, oct_lay_dL[0], minus_1_temp1);
+    fp16_add temp1_1(clk, pre_int_layer_temp2, oct_lay_dL[0], minus_1_temp1);
     fp16_minus temp1_2(clk, minus_1_temp1, 16'b0011110000000000, minus_1_temp2);
-    fp16_add temp2_1(clk, pre_int_layer, oct_lay_dL[1], minus_2_temp1);
+    fp16_add temp2_1(clk, pre_int_layer_temp2, oct_lay_dL[1], minus_2_temp1);
     fp16_minus temp2_2(clk, minus_2_temp1, 16'b0100000000000000, minus_2_temp2);
-    fp16_add temp3_1(clk, pre_int_layer, oct_lay_dL[2], minus_3_temp1);
+    fp16_add temp3_1(clk, pre_int_layer_temp2, oct_lay_dL[2], minus_3_temp1);
     fp16_minus temp3_2(clk, minus_3_temp1, 16'b0100001000000000, minus_3_temp2);
-    fp16_add temp4_1(clk, pre_int_layer, oct_lay_dL[3], minus_4_temp1);
+    fp16_add temp4_1(clk, pre_int_layer_temp2, oct_lay_dL[3], minus_4_temp1);
     fp16_minus temp4_2(clk, minus_4_temp1, 16'b0100010000000000, minus_4_temp2);
-    fp16_add temp5_1(clk, pre_int_layer, oct_lay_dL[4], minus_5_temp1);
+    fp16_add temp5_1(clk, pre_int_layer_temp2, oct_lay_dL[4], minus_5_temp1);
     fp16_minus temp5_2(clk, minus_5_temp1, 16'b0100010100000000, minus_5_temp2);
+    logic [15:0] oct_temp=16'b0;
+    logic oct_flag=1'b0;
+    logic [4:0] lod_active_reg;
+    logic lod_active_ready=1'b0;
+    logic lod_active_ready_new=1'b0;
     always @(posedge clk)begin
         state<=next_state;
     end
     always @(*)begin
+        oct_pos[2]=16'b0;
+        oct_pos[1]=16'b0;
+        oct_pos[0]=16'b0;
+        oct_lay_dL[4]=16'b0;
+        oct_lay_dL[3]=16'b0;
+        oct_lay_dL[2]=16'b0;
+        oct_lay_dL[1]=16'b0;
+        oct_lay_dL[0]=16'b0;        
+        oct_temp=16'b0;
+        oct_flag=1'b0;
+        lod_active_ready=1'b0;
+        lod_active_ready_new=1'b0;
         case (state)
             idle: begin
-                if (cal_lod==1) next_state= (rst_n) ? r0:idle;
-                else next_state=idle;
+                if (cal_lod==1) begin
+                next_state= (rst_n) ? r0:idle;
+                end
+                else begin next_state=idle;
+                end
                 lod_ready=0;
+                mem_sram_A=64'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                
                 end
             r0: begin
                 next_state = (rst_n) ? r1:idle;
-                
-                mem_sram_A = LOD_START_ADDR + current_tree_count * 3;
+                lod_ready=0;
+                mem_sram_A = LOD_START_ADDR + current_tree_count * 2;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+               
                 end
             r1: begin
                 next_state =  (rst_n) ? r2:idle;
-                mem_sram_A = LOD_START_ADDR + current_tree_count * 3+1;
+                //mem_sram_A = LOD_START_ADDR + current_tree_count * 2+1;
                 oct_pos[0] = mem_sram_Q[63:48];
                 oct_pos[1] = mem_sram_Q[47:32];
                 oct_pos[2] = mem_sram_Q[31:16];
-                oct_lay_dL[0] = mem_sram_Q[15:0];
+                //oct_lay_dL[0] = mem_sram_Q[15:0];
+                lod_ready=0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+                mem_sram_A = 64'b0;
                 end
+      
             r2: begin
                 next_state =  (rst_n) ? c0:idle;
+                //oct_lay_dL[1] = mem_sram_Q[63:48];
+                //oct_lay_dL[2] = mem_sram_Q[47:32];
+                //oct_lay_dL[3] = mem_sram_Q[31:16];
+                //oct_lay_dL[4] = mem_sram_Q[15:0];
+                lod_ready=0;
+                mem_sram_A=64'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
                 
-                oct_lay_dL[1] = mem_sram_Q[63:48];
-                oct_lay_dL[2] = mem_sram_Q[47:32];
-                oct_lay_dL[3] = mem_sram_Q[31:16];
-                oct_lay_dL[4] = mem_sram_Q[15:0];
                 end
             
             c0: begin
@@ -471,68 +511,206 @@ module lod_compute #(
                 dist_pow_x=dist_x_pow_temp;
                 dist_pow_y=dist_y_pow_temp;
                 dist_pow_z=dist_z_pow_temp;
+                lod_ready=0;
+                mem_sram_A=64'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+               
                 end
             c1: begin
                 next_state= (rst_n) ? c2:idle;
-                total_dist_pow=total_dist_pow_temp2;
+                //total_dist_pow=total_dist_pow_temp2;
+                lod_ready=0;
+                mem_sram_A=64'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+                
                 end
             c2: begin
                 next_state=(rst_n) ? c3:idle;
-                log_dist_max=log_dist_max_temp;
-                log_total_dist_pow=log_total_dist_pow_temp;
-                log_s=log_s_temp;
+                //log_dist_max=log_dist_max_temp;
+                //log_total_dist_pow=log_total_dist_pow_temp;
+                //log_s=log_s_temp;
+                lod_ready=0;
+                mem_sram_A=64'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+                
                 end
             c3: begin
                 next_state=(rst_n) ? c4:idle;
-                log_total_dist=log_total_dist_temp;
+                //log_total_dist=log_total_dist_temp;
+                lod_ready=0;
+                mem_sram_A=LOD_START_ADDR + current_tree_count * 2+1;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //mem_sram_A=64'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+               
                 end
             c4: begin
                 next_state=(rst_n) ? c5:idle;
-                pre_int_layer=pre_int_layer_temp2;
+                //pre_int_layer=pre_int_layer_temp2;
+                lod_ready=0;
+                mem_sram_A=LOD_START_ADDR + current_tree_count * 2+1;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //mem_sram_A=64'b0;
+                oct_lay_dL[1] = mem_sram_Q[63:48];
+                oct_lay_dL[2] = mem_sram_Q[47:32];
+                oct_lay_dL[3] = mem_sram_Q[31:16];
+                oct_lay_dL[4] = mem_sram_Q[15:0];
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+                
                 end
             c5: begin
-                next_state =  (rst_n) ? o0:idle;
+                next_state =  (rst_n) ? t0:idle;
                //lod_ready = 1;
-
-                minus_1=minus_1_temp2;
-                if (minus_1[15])
-                    lod_active_temp[TREE_LEVEL-1] = 0;
-                else
-                    lod_active_temp[TREE_LEVEL-1] = 1;
+                oct_lay_dL[1] = mem_sram_Q[63:48];
+                oct_lay_dL[2] = mem_sram_Q[47:32];
+                oct_lay_dL[3] = mem_sram_Q[31:16];
+                oct_lay_dL[4] = mem_sram_Q[15:0];
+                lod_active_ready=1'b1;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                //minus_1=minus_1_temp2;
+                //if (minus_1_temp2[15])
+                //    lod_active_temp[TREE_LEVEL-1] = 0;
+                //else
+                //    lod_active_temp[TREE_LEVEL-1] = 1;
                 
-                minus_2=minus_2_temp2;
-                if (minus_2[15])
+                //minus_2=minus_2_temp2;
+                if (minus_2_temp2[15])
                     lod_active_temp[TREE_LEVEL-2] = 0;
                 else
                      lod_active_temp[TREE_LEVEL-2] = 1;
                 
-                minus_3=minus_3_temp2;
-                if (minus_3[15])
+                //minus_3=minus_3_temp2;
+                if (minus_3_temp2[15])
                     lod_active_temp[TREE_LEVEL-3] = 0;
                  else
                      lod_active_temp[TREE_LEVEL-3] = 1;
                    
-                minus_4=minus_4_temp2;
-                if (minus_4[15])
+                //minus_4=minus_4_temp2;
+                if (minus_4_temp2[15])
                     lod_active_temp[TREE_LEVEL-4] = 0;
                 else
                      lod_active_temp[TREE_LEVEL-4] = 1;
                      
-                minus_5=minus_5_temp2;
-                if (minus_5[15])
+                //minus_5=minus_5_temp2;
+                if (minus_5_temp2[15])
                     lod_active_temp[TREE_LEVEL-5] = 0;
                 else
                      lod_active_temp[TREE_LEVEL-5] = 1;
-                     
+                lod_active_temp[4]=1'b0;
+                lod_ready=0;
+                mem_sram_A=LOD_START_ADDR + current_tree_count * 2;
+                //lod_active=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                oct_flag=1'b1;
+                
                 end
+            t0:begin
+            next_state =  (rst_n) ? t1:idle;
+            lod_active_ready=1'b0;
+            lod_ready=0;
+            oct_lay_dL[0]=mem_sram_Q[15:0];
+            mem_sram_A=LOD_START_ADDR + current_tree_count * 2;
+           
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+            end
+            t1:begin
+            next_state =  (rst_n) ? o0:idle;
+            lod_active_ready_new=1'b1;
+            oct_lay_dL[0]=mem_sram_Q[15:0];
+            lod_ready=0;
+            if (minus_1_temp2[15])
+                 lod_active_temp[TREE_LEVEL-1] = 0;
+             else
+                  lod_active_temp[TREE_LEVEL-1] = 1;
+            mem_sram_A=64'b0;
+                //lod_active=5'b0;
+                lod_active_temp[3]=1'b0;
+                lod_active_temp[2]=1'b0;
+                lod_active_temp[1]=1'b0;
+                lod_active_temp[0]=1'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+            
+            end
             o0: begin
                 next_state=idle;
                 lod_ready = 1;
-                lod_active=lod_active_temp;
+                //lod_active=lod_active_temp;
+                mem_sram_A=64'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                oct_flag=1'b0;
+               
                 end
-            default: next_state=idle;
+                
+            default: begin next_state=idle;
+                            lod_ready=0;
+                            mem_sram_A=64'b0;
+                            //lod_active=5'b0;
+                            lod_active_temp=5'b0;
+                            dist_pow_x=16'b0;
+                            dist_pow_y=16'b0;
+                            dist_pow_z=16'b0;
+                            oct_flag=1'b0;
+                            
+            end
         endcase
     end  
+    always @(posedge clk) begin
+        if (lod_active_ready==1) 
+            lod_active_reg=lod_active_temp;
+         else
+            lod_active_reg=lod_active_reg;
+        if (lod_active_ready_new==1)
+            lod_active_reg[4]=lod_active_temp[4];
+        else
+            lod_active_reg[4]=lod_active_reg[4];
+    end
+    assign lod_active=lod_active_reg;
 endmodule
+
+
+
+
 
 

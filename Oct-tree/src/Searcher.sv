@@ -229,47 +229,6 @@ module Searcher #(
   
 endmodule
 
-module lod_compute #(
-  parameter DIMENTION      = 3,
-  parameter DATA_WIDTH     = 16,
-  parameter DATA_BUS_WIDTH = 64,
-  parameter ADDR_BUS_WIDTH = 64,
-  parameter TREE_LEVEL     = 5 ,
-  parameter LOD_START_ADDR = 1
-) (
-  input  logic                                     clk,
-  input  logic                                     rst_n,
-  input  logic                                     cal_lod,
-  output logic                                     lod_ready,
-  output logic                                     mem_sram_CEN,
-  output logic                [ADDR_BUS_WIDTH-1:0] mem_sram_A,
-  output logic                [DATA_BUS_WIDTH-1:0] mem_sram_D,
-  output logic                                     mem_sram_GWEN,
-  input  logic                [DATA_BUS_WIDTH-1:0] mem_sram_Q,
-  input  logic [DIMENTION-1:0][    DATA_WIDTH-1:0] cam_pos,
-  input  logic                [    DATA_WIDTH-1:0] current_tree_count,
-  output logic                [    TREE_LEVEL-1:0] lod_active,
-  input logic[DATA_WIDTH-1:0]                      s,
-  input logic[DATA_WIDTH-1:0]                      dist_max
-);
-  //在SRAM中保存有这个Octree的position和每一层的delta L信息（一整个Octree的所有anchor共用同一个position，在同一个level的所有anchor共用一个delta L）
-  //在SRAM中的数据按照这个格式存储：以64个为一组，每一个octree保存3个64.
-  // 1、  ｜16 (x)        | 16 (y)    | 16 (z)    | 16(layer 1 delta L)| 
-  // 2、  | 16(layer 2)   |(layer 3)  | (layer 4) |(layer5)           |
-  //SRAM接口，直接操作读写即可，读写地址为    LOD_START_ADDR+2*current_tree_count 例如当current_tree_count为0 的时候需要读的地址就是LOD_START_ADDR，current_tree_count为5的时候，需要读的地址就是LOD_START_ADDR+3*5
-  //lod_active 1-1-0-0-0   表示level 0 和 1的有效，其余均无效； 1-1-1-1-0-0-0-0     表示 level 0-3有效；
-  //lod_active 1-0-0-1-0   表示level 0 和 3的anchor有效，其余均无效（理论上，在delta L巨大的场景下有可能出现）
-
-  assign mem_sram_GWEN = 1;
-  assign mem_sram_A    = 0;
-  assign mem_sram_D    = 0;
-  assign mem_sram_CEN  = (cal_lod) ? 0 : 1;
-  assign lod_active    = 5'b00111;
-  assign lod_ready     = 1;
-
-
-endmodule
-
 module tree_search #(
   parameter DIMENTION         = 3,
   parameter DATA_WIDTH        = 16,
@@ -369,6 +328,8 @@ module tree_search #(
   logic [   ADDR_BUS_WIDTH-1:0]                     actual_address;
   logic [   ADDR_BUS_WIDTH-1:0]                     address_for_sram;
   logic [ENCODE_ADDR_WIDTH-1:0]                     mem_posencode;
+  logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0]       rdata_1_slice;
+  logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0]       rdata_2_slice;
 
   // Direct mapping calculation
   logic [ADDR_BUS_WIDTH-1:0] hash_addr;
@@ -609,7 +570,7 @@ module tree_search #(
       level = (first)?0:fifo_1_rdata[FIFO_DATA_WIDTH-1-:3]+1;
       for (int a = 0; a < TREE_LEVEL; a += 1) begin
         if (a == {29'd0, fifo_1_rdata[FIFO_DATA_WIDTH-1-:3]} ) begin
-          offset[a]={61'd0,fifo_1_rdata[LOG_CHILD_NUM+(fifo_cnt+1)*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
+          offset[a]={61'd0,rdata_1_slice[fifo_cnt]};
         end else begin
           offset[a] ={61'd0, fifo_1_rdata[FIFO_DATA_WIDTH-LOG_TREE_LEVEL-1-a*LOG_CHILD_NUM-:LOG_CHILD_NUM]};
         end
@@ -620,7 +581,7 @@ module tree_search #(
       level = (first)?0:fifo_2_rdata[FIFO_DATA_WIDTH-1-:3];
       for (int a = 0; a < TREE_LEVEL; a += 1) begin
         if (a == {29'd0, fifo_2_rdata[FIFO_DATA_WIDTH-1-:3]} ) begin
-          offset[a]={61'd0,fifo_2_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-fifo_cnt*LOG_CHILD_NUM -:LOG_CHILD_NUM]};
+          offset[a]={61'd0,rdata_2_slice[fifo_cnt]};
         end else begin
           offset[a] = {61'd0,fifo_2_rdata[FIFO_DATA_WIDTH-LOG_TREE_LEVEL-1-a*LOG_CHILD_NUM-:LOG_CHILD_NUM]};
         end
@@ -630,6 +591,20 @@ module tree_search #(
       r_fifo_2_anchor_num = 0; 
       level= 0;
       for (int a = 0; a < TREE_LEVEL; a += 1) offset[a] = 0;
+    end
+  end
+
+  always_comb begin : interested_slice_of_fifo_rdata
+    if(rst_n ==0) begin
+      for(int i = 0 ;i<CHILDREN_NUM;i+=1)begin
+        rdata_1_slice[i] = 0 ;
+        rdata_2_slice[i] = 0 ;
+      end
+    end else begin
+      for(int i = 0 ;i<CHILDREN_NUM;i+=1)begin
+        rdata_1_slice[i] = fifo_1_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-i*LOG_CHILD_NUM -:LOG_CHILD_NUM]; 
+        rdata_2_slice[i] = fifo_2_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-i*LOG_CHILD_NUM -:LOG_CHILD_NUM];
+      end
     end
   end
 
@@ -648,27 +623,31 @@ module tree_search #(
     end
   end
 
+  
+
   // 在tree结构中计算实际地址 // TODO：增加hash的访存逻辑，最后将计算得到的输出也赋值给address_for_sram
   always_comb begin
     if (tree_state == SEARCH) begin
       address_part_ = 0;
-      for (int i = 0; i < level; i++) begin
-        if (i == 0) begin
-          address_part_ += 586 * offset[i];
-        end else begin
-          address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i -1));
+      for (int i = 0; i < TREE_LEVEL; i += 1) begin
+        if (i < level) begin
+          if (i == 0) begin
+            address_part_ += 586 * offset[i];
+          end else begin
+            address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i));
+          end
         end
       end
       actual_address   = address_part_ + ADDR_VARY[level] + TREE_ADDR_START;
       address_for_sram = {2'b0, actual_address[ADDR_BUS_WIDTH-1:2]};
       //same_addr        = (address_for_sram == last_addr_read) ? 1 : 0;// TODO：可以加一个同一地址的信号，用于标识是否有必要再次访存？
-    end else if (tree_state == OUT)begin //TODO:生成hash寻址逻辑
-      address_part_ =0;
+    end else if (tree_state == OUT) begin  //TODO:生成hash寻址逻辑
+      address_part_ = 0;
       actual_address = 0;
       address_for_sram = FEATURE_START_ADDR + {53'd0,hash_addr[10:0]} * 9 + {60'd0,in_anchor_cnt} - 1;      // Direct mappin
     end else begin
-      address_part_ =0;
-      actual_address = 0;
+      address_part_    = 0;
+      actual_address   = 0;
       address_for_sram = 0;
     end
   end
@@ -702,7 +681,7 @@ module tree_search #(
 
 
   //生成总的状态转移控制信号
-  always_ff @( posedge clk or rst_n ) begin : gen_extra_data
+  always_ff @( posedge clk or negedge rst_n ) begin : gen_extra_data
     if(rst_n == 0) begin
       searching_done <= 0;
       outing_done    <= 0;
