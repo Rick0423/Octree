@@ -1,5 +1,24 @@
 
 `timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Company: 
+// Engineer: 
+// 
+// Create Date: 2025/03/27 01:33:51
+// Design Name: 
+// Module Name: lod_compute
+// Project Name: 
+// Target Devices: 
+// Tool Versions: 
+// Description: 
+// 
+// Dependencies: 
+// 
+// Revision:
+// Revision 0.01 - File Created
+// Additional Comments:
+// 
+//////////////////////////////////////////////////////////////////////////////////
 module fp16_minus(input logic clk, input logic [15:0] floatA, input logic [15:0] floatB, output logic [15:0] minus_out);
     logic sign;
     logic signed [5:0] exponent; // fifth bit is sign
@@ -341,7 +360,7 @@ module lod_compute #(
     parameter DATA_BUS_WIDTH            = 64            ,
     parameter ADDR_BUS_WIDTH            = 64            ,
     parameter TREE_LEVEL                = 5             ,
-    parameter LOD_START_ADDR            = 1         
+    parameter LOD_START_ADDR            = 0         
 )(
     input logic[15:0] s,
     input logic[15:0] dist_max,
@@ -370,14 +389,14 @@ module lod_compute #(
     
 
 );
+    
     //需要完成的是
     //1、根据提供的公式计算每一层的int_layer,
     //2、然后判断当前层要不要在之后输出，如果需要输出那就将lod_active的对应的置为1，否则为0,同时将lod_ready置高
     //计算中使用到的数据是cam_pos，cam_pos[0]、cam_pos[1]、cam_pos[2]分别代表x、y、z的坐标，每一个坐标都是fp16的数。
     //计算中针对一个octree只计算一次，默认这个octree中
     assign mem_sram_GWEN = 1;
-    assign mem_sram_CEN  = (cal_lod)?0:1;
-    assign mem_sram_D = 0;
+    //assign mem_sram_CEN  = (cal_lod)?0:1;
     logic [4:0] lod_active_temp;
     logic [DIMENTION-1:0][DATA_WIDTH-1:0] oct_pos;
     logic [4:0][DATA_WIDTH-1:0] oct_lay_dL;
@@ -386,7 +405,7 @@ module lod_compute #(
     logic [15:0] int_layer;
     logic [15:0] minus_1,minus_2,minus_3,minus_4,minus_5;
     typedef enum logic [3:0] {
-        idle=4'b000,r0=4'b0001,r1=4'b0010,r2=4'b0011,r3=4'b0100,c0=4'b0101,c1=4'b0110,c2=4'b0111,c3=4'b1000,c4=4'b1001,c5=4'b1010,o0=4'b1011, t0=4'b1110,t1=4'b1111
+        idle=4'b000,s0=4'b0001,s1=4'b0010,s2=4'b0011,s3=4'b0100,s4=4'b0101,s5=4'b0110,s6=4'b0111,s7=4'b1000,s8=4'b1001,s9=4'b1010,s10=4'b1011, s11=4'b1100,s12=4'b1101,s13=4'b1110
     } state_t;
     state_t state, next_state;
     
@@ -442,10 +461,11 @@ module lod_compute #(
         oct_flag=1'b0;
         lod_active_ready=1'b0;
         lod_active_ready_new=1'b0;
+        mem_sram_CEN =1'b1;
         case (state)
             idle: begin
                 if (cal_lod==1) begin
-                next_state= (rst_n) ? r0:idle;
+                next_state= (rst_n) ? s0:idle;
                 end
                 else begin next_state=idle;
                 end
@@ -458,10 +478,11 @@ module lod_compute #(
                 dist_pow_z=16'b0;
                 
                 end
-            r0: begin
-                next_state = (rst_n) ? r1:idle;
+            s0: begin
+                next_state = (rst_n) ? s1:idle;
                 lod_ready=0;
-                mem_sram_A = LOD_START_ADDR + current_tree_count * 2;
+                mem_sram_A =  LOD_START_ADDR+ current_tree_count * 2;
+                mem_sram_CEN =1'b0;
                 //lod_active=5'b0;
                 lod_active_temp=5'b0;
                 dist_pow_x=16'b0;
@@ -469,9 +490,10 @@ module lod_compute #(
                 dist_pow_z=16'b0;
                
                 end
-            r1: begin
-                next_state =  (rst_n) ? r2:idle;
-                //mem_sram_A = LOD_START_ADDR + current_tree_count * 2+1;
+            s1: begin
+                next_state =  (rst_n) ? s2:idle;
+                mem_sram_A = LOD_START_ADDR+ current_tree_count * 2;
+                mem_sram_CEN =1'b0;
                 oct_pos[0] = mem_sram_Q[63:48];
                 oct_pos[1] = mem_sram_Q[47:32];
                 oct_pos[2] = mem_sram_Q[31:16];
@@ -484,17 +506,17 @@ module lod_compute #(
                 dist_pow_z=16'b0;
                 oct_temp=oct_lay_dL[0];
                 oct_flag=1'b1;
-                mem_sram_A = 64'b0;
+                
                 end
       
-            r2: begin
-                next_state =  (rst_n) ? c0:idle;
+            s2: begin
+                next_state =  (rst_n) ? s3:idle;
                 //oct_lay_dL[1] = mem_sram_Q[63:48];
                 //oct_lay_dL[2] = mem_sram_Q[47:32];
                 //oct_lay_dL[3] = mem_sram_Q[31:16];
                 //oct_lay_dL[4] = mem_sram_Q[15:0];
                 lod_ready=0;
-                mem_sram_A=64'b0;
+                mem_sram_A = 64'b0;
                 //lod_active=5'b0;
                 lod_active_temp=5'b0;
                 dist_pow_x=16'b0;
@@ -503,11 +525,13 @@ module lod_compute #(
                 //oct_lay_dL[0]=oct_temp;
                 //oct_temp=oct_lay_dL[0];
                 oct_flag=1'b1;
-                
+                oct_pos[0] = mem_sram_Q[63:48];
+                oct_pos[1] = mem_sram_Q[47:32];
+                oct_pos[2] = mem_sram_Q[31:16];
                 end
             
-            c0: begin
-                next_state =  (rst_n) ? c1:idle;
+            s3: begin
+                next_state =  (rst_n) ? s4:idle;
                 dist_pow_x=dist_x_pow_temp;
                 dist_pow_y=dist_y_pow_temp;
                 dist_pow_z=dist_z_pow_temp;
@@ -520,11 +544,12 @@ module lod_compute #(
                 oct_flag=1'b1;
                
                 end
-            c1: begin
-                next_state= (rst_n) ? c2:idle;
+            s4: begin
+                next_state= (rst_n) ? s5:idle;
                 //total_dist_pow=total_dist_pow_temp2;
                 lod_ready=0;
-                mem_sram_A=64'b0;
+                mem_sram_A=LOD_START_ADDR+ current_tree_count * 2+1;
+                mem_sram_CEN =1'b0;
                 //lod_active=5'b0;
                 lod_active_temp=5'b0;
                 dist_pow_x=16'b0;
@@ -535,49 +560,77 @@ module lod_compute #(
                 oct_flag=1'b1;
                 
                 end
-            c2: begin
-                next_state=(rst_n) ? c3:idle;
+            s5: begin
+                next_state=(rst_n) ? s6:idle;
                 //log_dist_max=log_dist_max_temp;
                 //log_total_dist_pow=log_total_dist_pow_temp;
                 //log_s=log_s_temp;
                 lod_ready=0;
+                mem_sram_A=LOD_START_ADDR+ current_tree_count * 2+1;
+                mem_sram_CEN =1'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+                oct_lay_dL[1] = mem_sram_Q[63:48];
+                oct_lay_dL[2] = mem_sram_Q[47:32];
+                oct_lay_dL[3] = mem_sram_Q[31:16];
+                oct_lay_dL[4] = mem_sram_Q[15:0];
+                end
+            s6: begin
+                next_state=(rst_n) ? s7:idle;
+                //log_total_dist=log_total_dist_temp;
+                lod_ready=0;
+                mem_sram_A=LOD_START_ADDR+ current_tree_count * 2+1;
+                mem_sram_CEN =1'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //mem_sram_A=64'b0;
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+               oct_lay_dL[1] = mem_sram_Q[63:48];
+                oct_lay_dL[2] = mem_sram_Q[47:32];
+                oct_lay_dL[3] = mem_sram_Q[31:16];
+                oct_lay_dL[4] = mem_sram_Q[15:0];
+                end
+            s7: begin
+                next_state=(rst_n) ? s8:idle;
+                //pre_int_layer=pre_int_layer_temp2;
+                lod_ready=0;
+                mem_sram_A=LOD_START_ADDR + current_tree_count * 2+1;
+                mem_sram_CEN =1'b0;
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+                //mem_sram_A=64'b0;
+                oct_lay_dL[1] = mem_sram_Q[63:48];
+                oct_lay_dL[2] = mem_sram_Q[47:32];
+                oct_lay_dL[3] = mem_sram_Q[31:16];
+                oct_lay_dL[4] = mem_sram_Q[15:0];
+                //oct_lay_dL[0]=oct_temp;
+                //oct_temp=oct_lay_dL[0];
+                oct_flag=1'b1;
+            end
+            s8: begin
+                next_state=(rst_n) ? s9:idle;
+                //pre_int_layer=pre_int_layer_temp2;
+                lod_ready=0;
                 mem_sram_A=64'b0;
                 //lod_active=5'b0;
                 lod_active_temp=5'b0;
                 dist_pow_x=16'b0;
                 dist_pow_y=16'b0;
                 dist_pow_z=16'b0;
-                //oct_lay_dL[0]=oct_temp;
-                //oct_temp=oct_lay_dL[0];
-                oct_flag=1'b1;
-                
-                end
-            c3: begin
-                next_state=(rst_n) ? c4:idle;
-                //log_total_dist=log_total_dist_temp;
-                lod_ready=0;
-                mem_sram_A=LOD_START_ADDR + current_tree_count * 2+1;
-                //lod_active=5'b0;
-                lod_active_temp=5'b0;
-                dist_pow_x=16'b0;
-                dist_pow_y=16'b0;
-                dist_pow_z=16'b0;
-                //mem_sram_A=64'b0;
-                //oct_lay_dL[0]=oct_temp;
-                //oct_temp=oct_lay_dL[0];
-                oct_flag=1'b1;
-               
-                end
-            c4: begin
-                next_state=(rst_n) ? c5:idle;
-                //pre_int_layer=pre_int_layer_temp2;
-                lod_ready=0;
-                mem_sram_A=LOD_START_ADDR + current_tree_count * 2+1;
-                //lod_active=5'b0;
-                lod_active_temp=5'b0;
-                dist_pow_x=16'b0;
-                dist_pow_y=16'b0;
-                dist_pow_z=16'b0;
                 //mem_sram_A=64'b0;
                 oct_lay_dL[1] = mem_sram_Q[63:48];
                 oct_lay_dL[2] = mem_sram_Q[47:32];
@@ -586,15 +639,11 @@ module lod_compute #(
                 //oct_lay_dL[0]=oct_temp;
                 //oct_temp=oct_lay_dL[0];
                 oct_flag=1'b1;
-                
                 end
-            c5: begin
-                next_state =  (rst_n) ? t0:idle;
+            s9: begin
+                next_state =  (rst_n) ? s10:idle;
                //lod_ready = 1;
-                oct_lay_dL[1] = mem_sram_Q[63:48];
-                oct_lay_dL[2] = mem_sram_Q[47:32];
-                oct_lay_dL[3] = mem_sram_Q[31:16];
-                oct_lay_dL[4] = mem_sram_Q[15:0];
+                
                 lod_active_ready=1'b1;
                 //oct_lay_dL[0]=oct_temp;
                 //oct_temp=oct_lay_dL[0];
@@ -637,12 +686,13 @@ module lod_compute #(
                 oct_flag=1'b1;
                 
                 end
-            t0:begin
-            next_state =  (rst_n) ? t1:idle;
+            s10:begin
+            next_state =  (rst_n) ? s11:idle;
             lod_active_ready=1'b0;
             lod_ready=0;
             oct_lay_dL[0]=mem_sram_Q[15:0];
             mem_sram_A=LOD_START_ADDR + current_tree_count * 2;
+            mem_sram_CEN =1'b0;
            
                 //lod_active=5'b0;
                 lod_active_temp=5'b0;
@@ -650,10 +700,23 @@ module lod_compute #(
                 dist_pow_y=16'b0;
                 dist_pow_z=16'b0;
             end
-            t1:begin
-            next_state =  (rst_n) ? o0:idle;
-            lod_active_ready_new=1'b1;
+            s11:begin
+                next_state =  (rst_n) ? s12:idle;
+            lod_active_ready=1'b0;
+            lod_ready=0;
             oct_lay_dL[0]=mem_sram_Q[15:0];
+            mem_sram_A=64'b0;
+           
+                //lod_active=5'b0;
+                lod_active_temp=5'b0;
+                dist_pow_x=16'b0;
+                dist_pow_y=16'b0;
+                dist_pow_z=16'b0;
+            end
+            s12:begin
+            next_state =  (rst_n) ? s13:idle;
+            lod_active_ready_new=1'b1;
+            
             lod_ready=0;
             if (minus_1_temp2[15])
                  lod_active_temp[TREE_LEVEL-1] = 0;
@@ -670,7 +733,7 @@ module lod_compute #(
                 dist_pow_z=16'b0;
             
             end
-            o0: begin
+            s13: begin
                 next_state=idle;
                 lod_ready = 1;
                 //lod_active=lod_active_temp;
@@ -706,11 +769,9 @@ module lod_compute #(
         else
             lod_active_reg[4]=lod_active_reg[4];
     end
-    assign lod_active=lod_active_reg;
+    assign lod_active=(lod_ready) ? lod_active_reg:5'b00000;
+    
 endmodule
-
-
-
 
 
 
