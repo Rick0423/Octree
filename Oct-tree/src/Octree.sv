@@ -7,8 +7,8 @@ module Octree #(
   parameter  FEATURE_LENTH     = 9,  //需要多少个DATA_BUS_WIDTH才可以读出一个anchor_feature 36*16=64*9
   parameter  CHILDREN_NUM      = 8,
   parameter  TREE_LEVEL        = 5,
-  parameter  SELECT_WIDTH      = 3,
-  parameter  CONTROL_WIDTH     = 3,  //控制信号的宽度
+  parameter  SELECT_WIDTH      = 2,
+  parameter  CONTROL_WIDTH     = 2,  //控制信号的宽度
   parameter  COUNTER_WIDTH     = 4,
   parameter  LOG_CHILD_NUM     = 3,
   parameter  LOG_TREE_LEVEL    = 3,
@@ -72,11 +72,7 @@ module Octree #(
   logic [DATA_BUS_WIDTH-1:0] updater_sram_Q;
   logic                      updater_sram_GWEN;
 
-  Control #(
-    .CONTROL_WIDTH(CONTROL_WIDTH),
-    .CHILDREN_NUM (CHILDREN_NUM),
-    .SELECT_WIDTH (SELECT_WIDTH)
-  ) control_inst (
+  Control  control_inst (
     .clk         (clk),
     .rst_n       (rst_n),
     .ctrl        (ctrl),

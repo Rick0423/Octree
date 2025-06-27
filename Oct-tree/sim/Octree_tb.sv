@@ -10,8 +10,8 @@ module Octree_tb;
   parameter  FEATURE_LENTH     = 9;
   parameter  CHILDREN_NUM      = 8;
   parameter  TREE_LEVEL        = 5;
-  parameter  SELECT_WIDTH      = 3;
-  parameter  CONTROL_WIDTH     = 3;
+  parameter  SELECT_WIDTH      = 2;
+  parameter  CONTROL_WIDTH     = 2;
   parameter  COUNTER_WIDTH     = 4;
   parameter  LOG_CHILD_NUM     = 3;
   parameter  LOG_TREE_LEVEL    = 3;
@@ -122,7 +122,7 @@ module Octree_tb;
     #10 rst_n = 1;
     
     // Apply some test cases
-    #20 ctrl = 3'b001; // Example control signal
+    #20 ctrl = 2'b01; // Example control signal
     //pos_encode = 18'h3FF; // Example position encoding
     //feature_in = 64'h123456789ABCDEF0; // Example feature data
     //in_valid = 1;
