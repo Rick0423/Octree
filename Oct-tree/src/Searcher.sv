@@ -191,19 +191,8 @@ module Searcher #(
   );
 
   tree_search  #(
-      .DIMENTION          (DIMENTION          ),
-      .DATA_WIDTH         (DATA_WIDTH         ),
-      .DATA_BUS_WIDTH     (DATA_BUS_WIDTH     ),
-      .ADDR_BUS_WIDTH     (ADDR_BUS_WIDTH     ),
       .FEATURE_LENTH      (FEATURE_LENTH      ),
-      .CHILDREN_NUM       (CHILDREN_NUM       ),
-      .TREE_LEVEL         (TREE_LEVEL         ),
-      .SELECT_WIDTH       (SELECT_WIDTH       ),
-      .COUNTER_WIDTH      (COUNTER_WIDTH      ),
-      .LOG_CHILD_NUM      (LOG_CHILD_NUM      ),
-      .LOG_TREE_LEVEL     (LOG_TREE_LEVEL     ),
       .TREE_ADDR_START    (TREE_ADDR_START    ),
-      .LOD_START_ADDR     (LOD_START_ADDR     ),
       .FEATURE_START_ADDR (FEATURE_START_ADDR ),
       .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH  ),
       .FIFO_DATA_WIDTH    (FIFO_DATA_WIDTH    ),
@@ -213,15 +202,15 @@ module Searcher #(
     .clk              (clk),
     .rst_n            (rst_n),
     .tree_search_start(tree_search_start),
-    .tree_search_done (tree_search_done),
-    .mem_sram_CEN     (search_sram_CEN),
-    .mem_sram_A       (search_sram_A),
-    .mem_sram_D       (search_sram_D),
-    .mem_sram_GWEN    (search_sram_GWEN),
+    .tree_search_done_o (tree_search_done),
+    .mem_sram_CEN_o     (search_sram_CEN),
+    .mem_sram_A_o       (search_sram_A),
+    .mem_sram_D_o       (search_sram_D),
+    .mem_sram_GWEN_o    (search_sram_GWEN),
     .mem_sram_Q       (search_sram_Q),
     .feature_out      (feature_out),
     .out_valid        (out_valid),
-    .out_ready        (out_ready),
+    .out_ready_o        (out_ready),
     .tree_cnt         (tree_cnt),
     .lod_active       (lod_active)
   );
@@ -230,109 +219,116 @@ module Searcher #(
 endmodule
 
 module tree_search #(
-  parameter DIMENTION         = 3,
-  parameter DATA_WIDTH        = 16,
-  parameter DATA_BUS_WIDTH    = 64,
-  parameter ADDR_BUS_WIDTH    = 64,
-  parameter FEATURE_LENTH     = 9,
-  parameter CHILDREN_NUM      = 8,
-  parameter TREE_LEVEL        = 5,
-  parameter SELECT_WIDTH      = 4,
-  parameter COUNTER_WIDTH     = 4,
-  parameter LOG_CHILD_NUM     = 3,
-  parameter LOG_TREE_LEVEL    = 3,
-  parameter TREE_ADDR_START   = 0,
-  parameter LOD_START_ADDR    = 500,
-  parameter FEATURE_START_ADDR= 400,
-  parameter ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL,
-  parameter FIFO_DATA_WIDTH   = ENCODE_ADDR_WIDTH + LOG_CHILD_NUM+1+LOG_CHILD_NUM*CHILDREN_NUM, //+1原因在与0-8需要4bit数据来表示
-  parameter FIFO_DEPTH_1      = ENCODE_ADDR_WIDTH + 10,
-  parameter FIFO_DEPTH_2      = ENCODE_ADDR_WIDTH + 10
+    parameter       FEATURE_LENTH               = 9     ,
+    parameter       TREE_ADDR_START             = 0     ,
+    parameter       FEATURE_START_ADDR          = 400   ,
+    parameter       ENCODE_ADDR_WIDTH           = 3 * 5 + 3,
+    parameter       FIFO_DATA_WIDTH             = ENCODE_ADDR_WIDTH + 3+1+3*8, //+1原因在与0-8需要4bit数据来表示
+    parameter       FIFO_DEPTH_1                = ENCODE_ADDR_WIDTH + 10,
+    parameter       FIFO_DEPTH_2                = ENCODE_ADDR_WIDTH + 10
 ) (
-  input  logic                      clk,
-  input  logic                      rst_n,
+    input                               clk                        ,
+    input                               rst_n                      ,
   //控制信号
-  input  logic                      tree_search_start,
-  output logic                      tree_search_done,
-  input  logic [ COUNTER_WIDTH-1:0] tree_cnt,
-  input  logic [    TREE_LEVEL-1:0] lod_active,
+    input                               tree_search_start          ,
+    output                              tree_search_done_o           ,
+    input                [   3: 0]      tree_cnt                   ,
+    input                [   4: 0]      lod_active                 ,
   //主存接口
-  output logic                      mem_sram_CEN,
-  output logic [ADDR_BUS_WIDTH-1:0] mem_sram_A,
-  output logic [DATA_BUS_WIDTH-1:0] mem_sram_D,
-  output logic                      mem_sram_GWEN,
-  input  logic [DATA_BUS_WIDTH-1:0] mem_sram_Q,
+    output                              mem_sram_CEN_o               ,
+    output               [  63: 0]      mem_sram_A_o                 ,
+    output               [  63: 0]      mem_sram_D_o                 ,
+    output                              mem_sram_GWEN_o              ,
+    input                [  63: 0]      mem_sram_Q                 ,
   //输出接口（连PE）
-  output logic [DATA_BUS_WIDTH-1:0] feature_out,
-  input  logic                      out_valid,
-  output logic                      out_ready
+    output               [  63: 0]      feature_out                ,
+    input                               out_valid                  ,
+    output                              out_ready_o                   
 );
-  localparam IDLE = 0, SEARCH = 1, OUT = 2, DONE = 3;
-  localparam FIFO_IDLE=0,FIFO_SEARCH=1,FIFO_OUTPUT=2,FIFO_SEARCH_THIS_ANCHOR=3,FIFO_READY_OUT=4,FIFO_OUTPUT_THIS_ANCHOR=5,FIFO_STALL_1_C=6;
-  localparam [TREE_LEVEL-1:0][DATA_BUS_WIDTH-1:0] ADDR_VARY = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
-  // Prime numbers for hash calculation
-  localparam  int PRIMES [4:0] = {2099719, 3867465, 807545, 2654435, 1};  // 质数数组，增强哈希随机性
+    localparam      [   1: 0] IDLE                        = 0     , 
+                              SEARCH                      = 1     ,
+                              OUT                         = 2     ,
+                              DONE                        = 3     ;
+    localparam      [   2: 0] FIFO_IDLE                   = 0     ,
+                              FIFO_SEARCH                 = 1     ,
+                              FIFO_OUTPUT                 = 2     ,
+                              FIFO_SEARCH_THIS_ANCHOR     = 3     ,
+                              FIFO_READY_OUT              = 4     ,
+                              FIFO_OUTPUT_THIS_ANCHOR     = 5     ,
+                              FIFO_STALL_1_C              = 6     ;
+
+    localparam      [4:0][63: 0]ADDR_VARY                 = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
+    localparam       int      PRIMES[4:0]                 = {2099719, 3867465, 807545, 2654435, 1};// 质数数组，增强哈希随机性
+
+    reg                                 mem_sram_CEN                ;
+    reg                  [  63: 0]      mem_sram_A                  ;
+    reg                  [  63: 0]      mem_sram_D                  ;
+    reg                                 mem_sram_GWEN               ;
+    reg                                 tree_search_done            ;
+    reg                                 out_ready                   ;
+    
 
   //控制信号、计数器、状态机
-  logic [COUNTER_WIDTH-1:0] fifo_cnt, in_anchor_cnt;
-  logic [SELECT_WIDTH-1:0] tree_state;
-  logic [2:0] fifo_state;
-  logic outing_done;
-  logic searching_done;
-  logic first;
+    reg                  [   3: 0]      fifo_cnt                    ,
+                                        in_anchor_cnt               ;
+    reg                  [   1: 0]      tree_state                  ;
+    reg                  [   2: 0]      fifo_state                  ;
+    reg                                 outing_done                 ;
+    reg                                 searching_done              ;
+    reg                                 first                       ;
 
   //输入到FIFO中保存的anchor原码地址
-  logic [ENCODE_ADDR_WIDTH-1:0] w_fifo_pos_encode;
+    reg                  [ENCODE_ADDR_WIDTH-1: 0]      w_fifo_pos_encode           ;
   //从64bit中选出关心的16bit,4选1。
-  logic [1:0] anchor_interested;  
+    reg                  [   1: 0]      anchor_interested           ;
 
   //解算的组合逻辑，根据从SRAM中读上来的数据，生成ready to search的数据，写入FIFO中
-  logic [CHILDREN_NUM-1:0]                    self_data;
-  logic [CHILDREN_NUM-1:0]                    child_data;
-  logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0] self_ones_pos;
-  logic [LOG_CHILD_NUM:0]                     self_ones_count;
-  logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0] child_ones_pos;
-  logic [LOG_CHILD_NUM:0]                     child_ones_count;
+    reg                  [   7: 0]      self_data                   ;
+    reg                  [   7: 0]      child_data                  ;
+    reg                [7:0][2: 0]      self_ones_pos               ;
+    reg                  [   3: 0]      self_ones_count             ;
+    reg                [7:0][2: 0]      child_ones_pos              ;
+    reg                  [   3: 0]      child_ones_count            ;
 
   //用于标识流水线中的数据是否有效。
-  logic                         offset_level_valid;
-  logic                         mem_read_data_valid;//访存拿到的数据是否有效
-  logic                         mem_read_data_valid_pre;
-  logic                         write_fifo_data_valid;//准备写进fifo的数据是否有效
+    reg                                 offset_level_valid          ;
+    reg                                 mem_read_data_valid         ;//访存拿到的数据是否有效
+    reg                                 mem_read_data_valid_pre     ;
+    reg                                 write_fifo_data_valid       ;//准备写进fifo的数据是否有效
   
 
   //FIFO的接口信号
-  logic                       fifo_1_wr_en;
-  logic                       fifo_1_rd_en;
-  logic                       fifo_1_empty;
-  logic                       fifo_1_full;
-  logic [FIFO_DATA_WIDTH-1:0] fifo_1_wdata;
-  logic [FIFO_DATA_WIDTH-1:0] fifo_1_rdata;
+    reg                                 fifo_1_wr_en                ;
+    reg                                 fifo_1_rd_en                ;
+    reg                                 fifo_1_empty                ;
+    reg                                 fifo_1_full                 ;
+    reg     [FIFO_DATA_WIDTH-1: 0]      fifo_1_wdata                ;
+    reg     [FIFO_DATA_WIDTH-1: 0]      fifo_1_rdata                ;
 
-  logic                       fifo_2_wr_en;
-  logic                       fifo_2_rd_en;
-  logic                       fifo_2_empty;
-  logic                       fifo_2_full;
-  logic [FIFO_DATA_WIDTH-1:0] fifo_2_wdata;
-  logic [FIFO_DATA_WIDTH-1:0] fifo_2_rdata;
+    reg                                 fifo_2_wr_en                ;
+    reg                                 fifo_2_rd_en                ;
+    reg                                 fifo_2_empty                ;
+    reg                                 fifo_2_full                 ;
+    reg     [FIFO_DATA_WIDTH-1: 0]      fifo_2_wdata                ;
+    reg     [FIFO_DATA_WIDTH-1: 0]      fifo_2_rdata                ;
 
   //从fifo中读出的数据中的第三部分，标识当前的fifo读出信号中有多少个有效的anchor，
-  logic [3:0]              r_fifo_1_anchor_num;
-  logic [3:0]              r_fifo_2_anchor_num;
+    logic                [   3: 0]      r_fifo_1_anchor_num         ;
+    logic                [   3: 0]      r_fifo_2_anchor_num         ;
 
   //实际地址计算过程中的使用的数据，方便debug地址线是否正确。
-  logic [ 2:0]                                      level;
-  logic [ ADDR_BUS_WIDTH-1:0]                                      offset [4:0];
+    logic                [   2: 0]      level                       ;
+    logic                [  63: 0]      offset[4:0]                 ;
   //加_ 表示是组合逻辑信号，组合路径太长，插入寄存器，level和offset
-  logic [   ADDR_BUS_WIDTH-1:0]                     address_part_;
-  logic [   ADDR_BUS_WIDTH-1:0]                     actual_address;
-  logic [   ADDR_BUS_WIDTH-1:0]                     address_for_sram;
-  logic [ENCODE_ADDR_WIDTH-1:0]                     mem_posencode;
-  logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0]       rdata_1_slice;
-  logic [CHILDREN_NUM-1:0][LOG_CHILD_NUM-1:0]       rdata_2_slice;
+    logic                [  63: 0]      address_part_               ;
+    logic                [  63: 0]      actual_address              ;
+    logic                [  63: 0]      address_for_sram            ;
+    logic [ENCODE_ADDR_WIDTH-1: 0]      mem_posencode               ;
+    logic              [7:0][2: 0]      rdata_1_slice               ;
+    logic              [7:0][2: 0]      rdata_2_slice               ;
 
   // Direct mapping calculation
-  logic [ADDR_BUS_WIDTH-1:0] hash_addr;
+    logic                [  63: 0]      hash_addr                   ;
   // Fast hash calculation
 
   //总的状态机
@@ -350,12 +346,12 @@ module tree_search #(
           end
         end
         SEARCH: begin
-          if(searching_done) begin 
+          if(searching_done) begin
             tree_state <= OUT;
           end
         end
         OUT: begin
-          if(outing_done) begin 
+          if(outing_done) begin
             tree_state <= DONE;
           end
         end
@@ -372,10 +368,10 @@ module tree_search #(
     if(rst_n == 0) begin
       self_data <= 0;
       child_data <= 0;
-    end else if(mem_read_data_valid) begin   
-      for (int i = 0; i < CHILDREN_NUM; i++) begin : bit_separation
-            child_data[i] <= mem_sram_Q[anchor_interested*CHILDREN_NUM*2+2*i];     // 提取偶数位
-            self_data[i]  <= mem_sram_Q[anchor_interested*CHILDREN_NUM*2+2*i + 1]; // 提取奇数位
+    end else if(mem_read_data_valid) begin
+      for (int i = 0; i < 8; i++) begin : bit_separation
+            child_data[i] <= mem_sram_Q[anchor_interested*8*2+2*i]; // 提取偶数位
+            self_data[i]  <= mem_sram_Q[anchor_interested*8*2+2*i + 1];// 提取奇数位
         end
     end
   end
@@ -385,7 +381,7 @@ module tree_search #(
   always_comb begin : produce_ready_to_read_data_self
     self_ones_count = 0;
     // 初始化所有位置为0
-    for (int i = 0; i < CHILDREN_NUM; i = i + 1) self_ones_pos[i] = 0;
+    for (int i = 0; i < 8; i = i + 1) self_ones_pos[i] = 0;
     j = 0;
     // 遍历每一位，如果为1则将位下标存入 ones_pos 数组中
     for (i = 0; i < 8; i = i + 1) begin
@@ -402,7 +398,7 @@ module tree_search #(
   always_comb begin : produce_ready_to_read_data_child
     child_ones_count = 0;
     // 初始化所有位置为0
-    for (int u = 0; u < CHILDREN_NUM; u = u + 1) child_ones_pos[u] = 0;
+    for (int u = 0; u < 8; u = u + 1) child_ones_pos[u] = 0;
     o = 0;
     // 遍历每一位，如果为1则将位下标存入 ones_pos 数组中
     for (u = 0; u < 8; u = u + 1) begin
@@ -422,13 +418,13 @@ module tree_search #(
       fifo_1_wdata <= 0;
       fifo_2_wdata <= 0;
     end else begin
-      if (write_fifo_data_valid & (tree_state == SEARCH)) begin // 只有在搜索阶段需要写入FIFO  
-        if((child_ones_count != 0) && lod_active[w_fifo_pos_encode[ENCODE_ADDR_WIDTH-1 -:3]]) begin 
+      if (write_fifo_data_valid & (tree_state == SEARCH)) begin     // 只有在搜索阶段需要写入FIFO  
+        if((child_ones_count != 0) && lod_active[w_fifo_pos_encode[ENCODE_ADDR_WIDTH-1 -:3]]) begin
           fifo_1_wr_en <= 1;
           fifo_1_wdata <= {w_fifo_pos_encode, child_ones_pos, child_ones_count};
         end else begin
           fifo_1_wr_en <= 0;
-        end 
+        end
         if((self_ones_count != 0) && lod_active[w_fifo_pos_encode[ENCODE_ADDR_WIDTH-1 -:3]]) begin
           fifo_2_wr_en <= 1;
           fifo_2_wdata <= {w_fifo_pos_encode, self_ones_pos, self_ones_count};
@@ -465,9 +461,8 @@ module tree_search #(
         FIFO_SEARCH:begin
           if(searching_done) begin
             fifo_state <= FIFO_READY_OUT;
-            fifo_1_rd_en <= 0; 
-          end
-          if(fifo_1_empty == 0) begin
+            fifo_1_rd_en <= 0;
+          end else if(fifo_1_empty == 0) begin
               fifo_1_rd_en <= 1;
               fifo_state <= FIFO_STALL_1_C;
               first <=0;
@@ -482,7 +477,7 @@ module tree_search #(
         FIFO_SEARCH_THIS_ANCHOR:begin
           if(fifo_cnt == r_fifo_1_anchor_num-1)begin
               fifo_1_rd_en <= 0;
-              fifo_state <= SEARCH;
+              fifo_state <= FIFO_SEARCH;
               fifo_cnt <= 0;
           end else begin
             fifo_1_rd_en <= 0;
@@ -545,8 +540,11 @@ module tree_search #(
         mem_sram_D          <= 0;
         mem_sram_GWEN       <= 1;
       end else begin
-        if(fifo_1_rd_en | fifo_2_rd_en | ((fifo_state == FIFO_SEARCH_THIS_ANCHOR) &(fifo_cnt != r_fifo_1_anchor_num-1)) 
-                        | ((fifo_state == FIFO_OUTPUT_THIS_ANCHOR) &((fifo_cnt != r_fifo_2_anchor_num-1)|(in_anchor_cnt != FEATURE_LENTH)))) begin
+        if(fifo_1_rd_en |
+           fifo_2_rd_en |
+           ((fifo_state == FIFO_SEARCH_THIS_ANCHOR) &(fifo_cnt != r_fifo_1_anchor_num-1))|
+           ((fifo_state == FIFO_OUTPUT_THIS_ANCHOR) &((fifo_cnt != r_fifo_2_anchor_num-1)|
+           (in_anchor_cnt != FEATURE_LENTH)))) begin
           mem_sram_CEN        <= 0;
           mem_sram_D          <= 0;
           mem_sram_GWEN       <= 1;
@@ -559,51 +557,52 @@ module tree_search #(
     end
   end
 
-  assign mem_sram_A = address_for_sram;
-  assign feature_out= (fifo_state == FIFO_OUTPUT_THIS_ANCHOR)?mem_sram_Q:0;
-  assign mem_read_data_valid_pre = ~mem_sram_CEN;
+    assign      mem_sram_A_o           = address_for_sram;
+    assign      feature_out          = (fifo_state == FIFO_OUTPUT_THIS_ANCHOR)?mem_sram_Q:0;
+    assign      mem_read_data_valid_pre= ~mem_sram_CEN;
+
   //准备地址相关信息 根据当前的fifo cnt 准备好要抓取的anchor的位置。
   always_comb begin : gen_level_offset_from_fifo_data
     if (tree_state == SEARCH) begin
       r_fifo_1_anchor_num = fifo_1_rdata[3:0];
-      r_fifo_2_anchor_num = 0; 
+      r_fifo_2_anchor_num = 0;
       level = (first)?0:fifo_1_rdata[FIFO_DATA_WIDTH-1-:3]+1;
-      for (int a = 0; a < TREE_LEVEL; a += 1) begin
+      for (int a = 0; a < 5; a += 1) begin
         if (a == {29'd0, fifo_1_rdata[FIFO_DATA_WIDTH-1-:3]} ) begin
           offset[a]={61'd0,rdata_1_slice[fifo_cnt]};
         end else begin
-          offset[a] ={61'd0, fifo_1_rdata[FIFO_DATA_WIDTH-LOG_TREE_LEVEL-1-a*LOG_CHILD_NUM-:LOG_CHILD_NUM]};
+          offset[a] ={61'd0, fifo_1_rdata[FIFO_DATA_WIDTH-3-1-a*3-:3]};
         end
       end
     end else if (tree_state == OUT) begin
       r_fifo_1_anchor_num = 0;
-      r_fifo_2_anchor_num = fifo_2_rdata[3:0];; 
+      r_fifo_2_anchor_num = fifo_2_rdata[3:0];;
       level = (first)?0:fifo_2_rdata[FIFO_DATA_WIDTH-1-:3];
-      for (int a = 0; a < TREE_LEVEL; a += 1) begin
+      for (int a = 0; a < 5; a += 1) begin
         if (a == {29'd0, fifo_2_rdata[FIFO_DATA_WIDTH-1-:3]} ) begin
           offset[a]={61'd0,rdata_2_slice[fifo_cnt]};
         end else begin
-          offset[a] = {61'd0,fifo_2_rdata[FIFO_DATA_WIDTH-LOG_TREE_LEVEL-1-a*LOG_CHILD_NUM-:LOG_CHILD_NUM]};
+          offset[a] = {61'd0,fifo_2_rdata[FIFO_DATA_WIDTH-3-1-a*3-:3]};
         end
       end
     end else begin
       r_fifo_1_anchor_num = 0;
-      r_fifo_2_anchor_num = 0; 
+      r_fifo_2_anchor_num = 0;
       level= 0;
-      for (int a = 0; a < TREE_LEVEL; a += 1) offset[a] = 0;
+      for (int a = 0; a < 5; a += 1) offset[a] = 0;
     end
   end
 
   always_comb begin : interested_slice_of_fifo_rdata
     if(rst_n ==0) begin
-      for(int i = 0 ;i<CHILDREN_NUM;i+=1)begin
+      for(int i = 0 ;i<8;i+=1)begin
         rdata_1_slice[i] = 0 ;
         rdata_2_slice[i] = 0 ;
       end
     end else begin
-      for(int i = 0 ;i<CHILDREN_NUM;i+=1)begin
-        rdata_1_slice[i] = fifo_1_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-i*LOG_CHILD_NUM -:LOG_CHILD_NUM]; 
-        rdata_2_slice[i] = fifo_2_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-i*LOG_CHILD_NUM -:LOG_CHILD_NUM];
+      for(int i = 0 ;i<8;i+=1)begin
+        rdata_1_slice[i] = fifo_1_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-i*3 -:3];
+        rdata_2_slice[i] = fifo_2_rdata[FIFO_DATA_WIDTH-ENCODE_ADDR_WIDTH-1-i*3 -:3];
       end
     end
   end
@@ -615,9 +614,9 @@ module tree_search #(
       anchor_interested <= 0;
     end else begin
       // 组成格式：|level[2:0]| offset0[2:0] | offset1[2:0] | offset2[2:0] | offset3[2:0] | offset4[2:0]|
-      mem_posencode <= {level, offset[0][LOG_CHILD_NUM-1:0], 
-                        offset[1][LOG_CHILD_NUM-1:0], offset[2][LOG_CHILD_NUM-1:0], 
-                        offset[3][LOG_CHILD_NUM-1:0], offset[4][LOG_CHILD_NUM-1:0]};
+      mem_posencode <= {level, offset[0][2:0],
+                        offset[1][2:0], offset[2][2:0],
+                        offset[3][2:0], offset[4][2:0]};
       w_fifo_pos_encode <= mem_posencode;
       anchor_interested <= actual_address[1:0];
     end
@@ -629,22 +628,22 @@ module tree_search #(
   always_comb begin
     if (tree_state == SEARCH) begin
       address_part_ = 0;
-      for (int i = 0; i < TREE_LEVEL; i += 1) begin
+      for (int i = 0; i < 5; i += 1) begin
         if (i < level) begin
           if (i == 0) begin
             address_part_ += 586 * offset[i];
           end else begin
-            address_part_ += offset[i] * (1'b1) << (LOG_CHILD_NUM * ({28'd0, level} - i));
+            address_part_ += offset[i] * (1'b1) << (2* ({28'd0, level} - i));
           end
         end
       end
       actual_address   = address_part_ + ADDR_VARY[level] + TREE_ADDR_START;
-      address_for_sram = {2'b0, actual_address[ADDR_BUS_WIDTH-1:2]};
+      address_for_sram = {2'b0, actual_address[63:2]};
       //same_addr        = (address_for_sram == last_addr_read) ? 1 : 0;// TODO：可以加一个同一地址的信号，用于标识是否有必要再次访存？
-    end else if (tree_state == OUT) begin  //TODO:生成hash寻址逻辑
+    end else if (tree_state == OUT) begin                           //TODO:生成hash寻址逻辑
       address_part_ = 0;
       actual_address = 0;
-      address_for_sram = FEATURE_START_ADDR + {53'd0,hash_addr[10:0]} * 9 + {60'd0,in_anchor_cnt} - 1;      // Direct mappin
+      address_for_sram = FEATURE_START_ADDR + {53'd0,hash_addr[10:0]} * 9 + {60'd0,in_anchor_cnt} - 1;// Direct mappin
     end else begin
       address_part_    = 0;
       actual_address   = 0;
@@ -656,21 +655,21 @@ module tree_search #(
   always_comb begin
     if (!rst_n) begin
       hash_addr = 64'd0;
-    end else if (tree_state == OUT) begin  // OUT 状态
+    end else if (tree_state == OUT) begin                           // OUT 状态
       case (level)
         0: hash_addr = offset[0]+1;
         1: hash_addr = offset[0]+1 + (offset[1] + 64'd1) * 8;
-        2: hash_addr = ((offset[0] + 64'd1) * PRIMES[0] 
-                     ^ (offset[1] + 64'd1) * PRIMES[1] 
+        2: hash_addr = ((offset[0] + 64'd1) * PRIMES[0]
+                     ^ (offset[1] + 64'd1) * PRIMES[1]
                      ^ (offset[2] + 64'd1) * PRIMES[2] )+ 64'd72;
-        3: hash_addr = ((offset[0] + 64'd1) * PRIMES[0] 
-                     ^ (offset[1] + 64'd1) * PRIMES[1] 
-                     ^ (offset[2] + 64'd1) * PRIMES[2] 
+        3: hash_addr = ((offset[0] + 64'd1) * PRIMES[0]
+                     ^ (offset[1] + 64'd1) * PRIMES[1]
+                     ^ (offset[2] + 64'd1) * PRIMES[2]
                      ^ (offset[3] + 64'd1) * PRIMES[3] )+ 64'd72;
-        4: hash_addr = ((offset[0] + 64'd1) * PRIMES[0] 
-                     ^ (offset[1] + 64'd1) * PRIMES[1] 
-                     ^ (offset[2] + 64'd1) * PRIMES[2] 
-                     ^ (offset[3] + 64'd1) * PRIMES[3]  
+        4: hash_addr = ((offset[0] + 64'd1) * PRIMES[0]
+                     ^ (offset[1] + 64'd1) * PRIMES[1]
+                     ^ (offset[2] + 64'd1) * PRIMES[2]
+                     ^ (offset[3] + 64'd1) * PRIMES[3]
                      ^ (offset[4] + 64'd1) * PRIMES[4] )+ 64'd72;
         default: hash_addr = 64'd0;
       endcase
@@ -686,7 +685,9 @@ module tree_search #(
       searching_done <= 0;
       outing_done    <= 0;
     end else begin
-      if((tree_state == SEARCH) & fifo_1_empty & ((write_fifo_data_valid+mem_read_data_valid_pre+mem_read_data_valid+fifo_1_wr_en )==0))begin
+      if((tree_state == SEARCH) & 
+        fifo_1_empty & 
+        ((write_fifo_data_valid+mem_read_data_valid_pre+mem_read_data_valid+fifo_1_wr_en )==0))begin
         //当搜索fifo空，并且流水线中不存在任何有效数据时，搜索结束
         searching_done <= 1;
       end else if((tree_state == OUT) & fifo_2_empty& (fifo_state ==FIFO_IDLE) )begin
@@ -711,31 +712,38 @@ module tree_search #(
 
   //FIFO——1 用于存储搜索的信息
   fifo_sync #(
-    .DATA_WIDTH(FIFO_DATA_WIDTH),
-    .DEPTH     (FIFO_DEPTH_1)
+    .DATA_WIDTH                  (FIFO_DATA_WIDTH           ),
+    .DEPTH                       (FIFO_DEPTH_1              ) 
   ) u_fifo_sync_1 (
-    .clk  (clk),
-    .rst_n(rst_n),
-    .wr_en(fifo_1_wr_en),
-    .rd_en(fifo_1_rd_en),
-    .wdata(fifo_1_wdata),
-    .rdata(fifo_1_rdata),
-    .empty(fifo_1_empty),
-    .full (fifo_1_full)
+    .clk                         (clk                       ),
+    .rst_n                       (rst_n                     ),
+    .wr_en                       (fifo_1_wr_en              ),
+    .rd_en                       (fifo_1_rd_en              ),
+    .wdata                       (fifo_1_wdata              ),
+    .rdata                       (fifo_1_rdata              ),
+    .empty                       (fifo_1_empty              ),
+    .full                        (fifo_1_full               ) 
   );
 
   //FIFO——2 用于存储anchor相关的信息。
   fifo_sync #(
-    .DATA_WIDTH(FIFO_DATA_WIDTH),
-    .DEPTH     (FIFO_DEPTH_2)
+    .DATA_WIDTH                  (FIFO_DATA_WIDTH           ),
+    .DEPTH                       (FIFO_DEPTH_2              ) 
   ) u_fifo_sync_2 (
-    .clk  (clk),
-    .rst_n(rst_n),
-    .wr_en(fifo_2_wr_en),
-    .rd_en(fifo_2_rd_en),
-    .wdata(fifo_2_wdata),
-    .rdata(fifo_2_rdata),
-    .empty(fifo_2_empty),
-    .full (fifo_2_full)
+    .clk                         (clk                       ),
+    .rst_n                       (rst_n                     ),
+    .wr_en                       (fifo_2_wr_en              ),
+    .rd_en                       (fifo_2_rd_en              ),
+    .wdata                       (fifo_2_wdata              ),
+    .rdata                       (fifo_2_rdata              ),
+    .empty                       (fifo_2_empty              ),
+    .full                        (fifo_2_full               ) 
   );
+
+    assign      mem_sram_CEN_o       = mem_sram_CEN;
+    assign      mem_sram_D_o         = mem_sram_D;
+    assign      mem_sram_GWEN_o      = mem_sram_GWEN;
+    assign      tree_search_done_o   = tree_search_done;
+    assign      out_ready_o          = out_ready;
+
 endmodule
