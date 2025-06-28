@@ -167,11 +167,6 @@ module Searcher #(
   end
 
   lod_compute #(
-    .DIMENTION     (DIMENTION),
-    .DATA_WIDTH    (DATA_WIDTH),
-    .DATA_BUS_WIDTH(DATA_BUS_WIDTH),
-    .ADDR_BUS_WIDTH(ADDR_BUS_WIDTH),
-    .TREE_LEVEL    (TREE_LEVEL),
     .LOD_START_ADDR(LOD_START_ADDR)
   ) u_lod_compute (
     .clk               (clk),
@@ -313,22 +308,22 @@ module tree_search #(
     reg     [FIFO_DATA_WIDTH-1: 0]      fifo_2_rdata                ;
 
   //从fifo中读出的数据中的第三部分，标识当前的fifo读出信号中有多少个有效的anchor，
-    logic                [   3: 0]      r_fifo_1_anchor_num         ;
-    logic                [   3: 0]      r_fifo_2_anchor_num         ;
+    reg                  [   3: 0]      r_fifo_1_anchor_num         ;
+    reg                  [   3: 0]      r_fifo_2_anchor_num         ;
 
   //实际地址计算过程中的使用的数据，方便debug地址线是否正确。
-    logic                [   2: 0]      level                       ;
-    logic                [  63: 0]      offset[4:0]                 ;
+    reg                  [   2: 0]      level                       ;
+    reg                  [  63: 0]      offset[4:0]                 ;
   //加_ 表示是组合逻辑信号，组合路径太长，插入寄存器，level和offset
-    logic                [  63: 0]      address_part_               ;
-    logic                [  63: 0]      actual_address              ;
-    logic                [  63: 0]      address_for_sram            ;
-    logic [ENCODE_ADDR_WIDTH-1: 0]      mem_posencode               ;
-    logic              [7:0][2: 0]      rdata_1_slice               ;
-    logic              [7:0][2: 0]      rdata_2_slice               ;
+    reg                  [  63: 0]      address_part_               ;
+    reg                  [  63: 0]      actual_address              ;
+    reg                  [  63: 0]      address_for_sram            ;
+    reg   [ENCODE_ADDR_WIDTH-1: 0]      mem_posencode               ;
+    reg                [7:0][2: 0]      rdata_1_slice               ;
+    reg                [7:0][2: 0]      rdata_2_slice               ;
 
   // Direct mapping calculation
-    logic                [  63: 0]      hash_addr                   ;
+    reg                  [  63: 0]      hash_addr                   ;
   // Fast hash calculation
 
   //总的状态机
