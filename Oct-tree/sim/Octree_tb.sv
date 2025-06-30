@@ -2,162 +2,125 @@
 
 module Octree_tb;
 
-  // Parameter definitions
-  parameter  DIMENTION         = 3;  
-  parameter  DATA_WIDTH        = 16;
-  parameter  DATA_BUS_WIDTH    = 64;
-  parameter  ADDR_BUS_WIDTH    = 64;
-  parameter  FEATURE_LENTH     = 9;
-  parameter  CHILDREN_NUM      = 8;
-  parameter  TREE_LEVEL        = 5;
-  parameter  SELECT_WIDTH      = 2;
-  parameter  CONTROL_WIDTH     = 2;
-  parameter  COUNTER_WIDTH     = 4;
-  parameter  LOG_CHILD_NUM     = 3;
-  parameter  LOG_TREE_LEVEL    = 3;
-  parameter  ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL;
-  parameter  TREE_ADDR_START   = 0;
-  parameter  LOD_START_ADDR    = 500;
-  parameter  FEATURE_START_ADDR= 400;
+    reg                                 clk                         ;
+    reg                                 rst_n                       ;
+    reg                  [18-1: 0]      csr_pos_encode              ;
+    reg                  [   1: 0]      csr_ctrl                    ;
+    reg                  [   3: 0]      csr_tree_num                ;
+    wire                 [   1: 0]      csr_op_done                 ;
+    wire                 [4:0][15:0]    csr_lod_param               ;
+    wire                                in_out_sram_CEN_o           ;
+    wire                 [  63: 0]      in_out_sram_A_o             ;
+    wire                 [  63: 0]      in_out_sram_D_o             ;
+    wire                                in_out_sram_GWEN_o          ;
+    reg                  [  63: 0]      in_out_sram_Q_i             ;
+    wire                                mem_sram_CEN                ;
+    wire                 [  63: 0]      mem_sram_A                  ;
+    wire                 [  63: 0]      mem_sram_D                  ;
+    wire                                mem_sram_GWEN               ;
+    reg                  [  63: 0]      mem_sram_Q                  ;
+    reg                  [  15: 0]      s                           ;
+    reg                  [  15: 0]      dist_max                    ;
+    reg               [2:0][15: 0]      cam_pos                     ;
 
-  // Signal declarations
-  logic clk;
-  logic rst_n;
-  logic [ENCODE_ADDR_WIDTH-1:0] pos_encode;
-  logic [DATA_BUS_WIDTH-1:0] feature_in;
-  logic [DATA_BUS_WIDTH-1:0] feature_out;
-  logic [CONTROL_WIDTH-1:0] ctrl;
-  logic [COUNTER_WIDTH-1:0] tree_num;
-  logic [DIMENTION-1:0][DATA_WIDTH-1:0] cam_pos;
-  logic [DATA_WIDTH-1:0] dist_max;
-  logic [DATA_WIDTH-1:0] s;
-  logic out_valid;
-  logic out_ready;
-  logic in_valid;
-  logic in_ready;
-  logic mem_sram_CEN;
-  logic [ADDR_BUS_WIDTH-1:0] mem_sram_A;
-  logic [DATA_BUS_WIDTH-1:0] mem_sram_D;
-  logic mem_sram_GWEN;
-  logic [DATA_BUS_WIDTH-1:0] mem_sram_Q;
+Octree#(
+   .FEATURE_LENTH  (9              ),
+   .ENCODE_ADDR_WIDTH(3*5+3          ),
+   .TREE_START_ADDR(0              ),
+   .LOD_START_ADDR (500            ),
+   .FEATURE_START_ADDR(400            ),
+   .INPUT_FEATURE_START_ADDR(0              ),
+   .OUTPUT_FEATURE_START_ADDR(10             )
+)
+ u_Octree(
+    .clk                         (clk                       ),
+    .rst_n                       (rst_n                     ),
+    .csr_pos_encode              (csr_pos_encode            ),// level | offset 0 | offset  1 | offset  2 | offset  3 | offset  4
+    .csr_ctrl                    (csr_ctrl                  ),// 0 IDLE; 1 search tree;2 add anchor; 3 delete anchor
+    .csr_tree_num                (csr_tree_num              ),// （take 8 for now）
+    .csr_op_done                 (csr_op_done               ),// 00 IDLE;01 search_done;02 add_done;03 del_done
+    .csr_lod_param               (csr_lod_param             ),
+//in_out_sram for testing
+    .in_out_sram_CEN_o           (in_out_sram_CEN_o         ),
+    .in_out_sram_A_o             (in_out_sram_A_o           ),
+    .in_out_sram_D_o             (in_out_sram_D_o           ),
+    .in_out_sram_GWEN_o          (in_out_sram_GWEN_o        ),
+    .in_out_sram_Q_i             (in_out_sram_Q_i           ),
+//main_memory
+    .mem_sram_CEN                (mem_sram_CEN              ),
+    .mem_sram_A                  (mem_sram_A                ),
+    .mem_sram_D                  (mem_sram_D                ),
+    .mem_sram_GWEN               (mem_sram_GWEN             ),
+    .mem_sram_Q                  (mem_sram_Q                ) 
+);
 
-  logic   search_done;
-  logic   del_done   ;
-  logic   add_done    ;
 
-  // Instantiate the Octree module
-  Octree #(
-      .DIMENTION          (DIMENTION          ),
-      .DATA_WIDTH         (DATA_WIDTH         ),
-      .DATA_BUS_WIDTH     (DATA_BUS_WIDTH     ),
-      .ADDR_BUS_WIDTH     (ADDR_BUS_WIDTH     ),
-      .FEATURE_LENTH      (FEATURE_LENTH      ),
-      .CHILDREN_NUM       (CHILDREN_NUM       ),
-      .TREE_LEVEL         (TREE_LEVEL         ),
-      .SELECT_WIDTH       (SELECT_WIDTH       ),
-      .CONTROL_WIDTH      (CONTROL_WIDTH      ),
-      .COUNTER_WIDTH      (COUNTER_WIDTH      ),
-      .LOG_CHILD_NUM      (LOG_CHILD_NUM      ),
-      .LOG_TREE_LEVEL     (LOG_TREE_LEVEL     ),
-      .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH  ),
-      .TREE_ADDR_START    (TREE_ADDR_START    ),
-      .LOD_START_ADDR     (LOD_START_ADDR     ),
-      .FEATURE_START_ADDR (FEATURE_START_ADDR )
-  ) u_Octree(
-      .clk           (clk           ),
-      .rst_n         (rst_n         ),
-      .pos_encode    (pos_encode    ),
-      .feature_in    (feature_in    ),
-      .feature_out   (feature_out   ),
-      .ctrl          (ctrl          ),
-      .tree_num      (tree_num      ),
-      .cam_pos       (cam_pos       ),
-      .dist_max      (dist_max      ),
-      .s             (s             ),
-      .out_valid     (out_valid     ),
-      .out_ready     (out_ready     ),
-      .mem_sram_CEN  (mem_sram_CEN  ),
-      .mem_sram_A    (mem_sram_A    ),
-      .mem_sram_D    (mem_sram_D    ),
-      .mem_sram_GWEN (mem_sram_GWEN ),
-      .mem_sram_Q    (mem_sram_Q    ),
-      .search_done   (search_done),
-      .del_done      (del_done),
-      .add_done      (add_done)
-  );
-  
-  sram #(
-      .DATA_WIDTH (DATA_BUS_WIDTH ),
-      .ADDR_WIDTH (64 ),
-      .MEM_DEPTH  (20280      )
-  )
-  u_sram(
-      .clk      (clk      ),
-      .rst_n    (rst_n),
-      .mem_sram_CEN (mem_sram_CEN ),
-      .mem_sram_A (mem_sram_A ),
-      .mem_sram_D  (mem_sram_D ),
-      .mem_sram_GWEN (mem_sram_GWEN ),
-      .mem_sram_Q  (mem_sram_Q )
-  );
+sram #(
+    .DATA_WIDTH                  (64                        ),
+    .ADDR_WIDTH                  (64                        ),
+    .MEM_DEPTH                   (20280                     ) 
+)
+ Main_mem (
+    .clk                         (clk                       ),// Clock signal
+    .rst_n                       (rst_n                     ),// Active-low reset
+    .mem_sram_CEN                (mem_sram_CEN              ),// Chip Enable (Active Low)
+    .mem_sram_A                  (mem_sram_A                ),// Address Bus
+    .mem_sram_D                  (mem_sram_D                ),// Data Bus (Bidirectional)
+    .mem_sram_GWEN               (mem_sram_GWEN             ),// Global Write Enable (Active Low)
+    .mem_sram_Q                  (mem_sram_Q                ) // Data Output
+);
+
+sram #(
+    .DATA_WIDTH                  (64                        ),
+    .ADDR_WIDTH                  (64                        ),
+    .MEM_DEPTH                   (20280                     ) 
+)
+ in_out_sram(
+    .clk                         (clk                       ),// Clock signal
+    .rst_n                       (rst_n                     ),// Active-low reset
+    .mem_sram_CEN                (in_out_sram_CEN_o           ),// Chip Enable (Active Low)
+    .mem_sram_A                  (in_out_sram_A_o             ),// Address Bus
+    .mem_sram_D                  (in_out_sram_D_o             ),// Data Bus (Bidirectional)
+    .mem_sram_GWEN               (in_out_sram_GWEN_o          ),// Global Write Enable (Active Low)
+    .mem_sram_Q                  (in_out_sram_Q_i             ) // Data Output
+);
 
   // Clock generation
   always #5 clk = ~clk;
+  assign csr_lod_param = {s,dist_max,cam_pos};
 
   // Test stimulus
   initial begin
     // Initialize signals
     clk = 0;
     rst_n = 0;
-    pos_encode = 0;
-    feature_in = 0;
-    ctrl = 0;
-    tree_num = 1;
-    cam_pos = 0;
-    dist_max = 0;
-    s = 0;
-    in_valid = 0;
+    csr_pos_encode = 0;
+    csr_ctrl = 0;
+    csr_tree_num = 1;
+    cam_pos = '{16'h3C00, 16'h3C00, 16'h3C00};
+    dist_max = 16'b0100100100000000;
+    s = 16'b0011110000000000;
     
     // Reset sequence
     #10 rst_n = 1;
     
-    // Apply some test cases
-    #20 ctrl = 2'b01; // Example control signal
-    //pos_encode = 18'h3FF; // Example position encoding
-    //feature_in = 64'h123456789ABCDEF0; // Example feature data
-    //in_valid = 1;
-    wait(out_ready);
-
-    #10
-    out_valid = 1;
-    #10 
-    out_valid = 0;
-
-    wait(search_done);
-
-    
-    //#10 ctrl = 3'b000;
-//
-    //#2000 ctrl = 3'b011;
-    //pos_encode = {3'd1,3'd4,3'd1,3'd2,3'd5,3'd6};
-//
-    ////#10 in_valid = 0;
-    //#100 ctrl = 3'b010;
-    //pos_encode = {3'd1,3'd4,3'd1,3'd2,3'd5,3'd6};
-    //for(int i=0;i<9;i+=1)begin
-    //  feature_in = {32'd0,i};
-    //  #10;
-    //end
-    //// Wait for output to be valid
-    //#10 ctrl = 3'b000;
-    
-
-    
-    
-    // Observe the output
-    $display("Feature Out: %h", feature_out);
-    
-    #50;
+    // search 
+//    #20 csr_ctrl = 2'b01; 
+//    #20 csr_ctrl = 2'b00;                                     
+//    wait(csr_op_done == 2'b01);
+//    #50
+    //del
+    #10 csr_ctrl = 2'b11;
+    #10 csr_ctrl = 2'b00;
+    csr_pos_encode = {3'd1,3'd4,3'd1,3'd2,3'd5,3'd6};
+    wait(csr_op_done == 2'b11);
+    #50
+    //add
+    #30 csr_ctrl = 2'b10;
+    #10 csr_ctrl = 2'b00;
+    csr_pos_encode = {3'd1,3'd4,3'd1,3'd2,3'd5,3'd6};
+    wait(csr_op_done == 2'b10);
+    #500;
     $finish;
   end
 

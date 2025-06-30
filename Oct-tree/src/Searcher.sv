@@ -1,132 +1,103 @@
 `timescale 1ns / 1ps
 module Searcher #(
-  parameter DIMENTION         = 3,
-  parameter DATA_WIDTH        = 16,
-  parameter DATA_BUS_WIDTH    = 64,
-  parameter ADDR_BUS_WIDTH    = 64,
-  parameter FEATURE_LENTH     = 9,
-  parameter CHILDREN_NUM      = 8,
-  parameter TREE_LEVEL        = 5,
-  parameter SELECT_WIDTH      = 3,
-  parameter COUNTER_WIDTH     = 4,
-  parameter LOG_CHILD_NUM     = 3,
-  parameter LOG_TREE_LEVEL    = 3,
-  parameter TREE_ADDR_START   = 0,
-  parameter LOD_START_ADDR    = 500,
-  parameter FEATURE_START_ADDR= 1200,
-  parameter ENCODE_ADDR_WIDTH = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL,
-  parameter FIFO_DATA_WIDTH   = ENCODE_ADDR_WIDTH + LOG_CHILD_NUM+1+LOG_CHILD_NUM*CHILDREN_NUM, //+1原因在于0-8需要4bit数据来表示
-  parameter FIFO_DEPTH_1      = ENCODE_ADDR_WIDTH + 10,
-  parameter FIFO_DEPTH_2      = ENCODE_ADDR_WIDTH + 10
+    parameter       FEATURE_LENTH               = 9     ,
+    parameter       TREE_START_ADDR             = 0     ,
+    parameter       LOD_START_ADDR              = 500   ,
+    parameter       FEATURE_START_ADDR          = 1200  ,
+    parameter       ENCODE_ADDR_WIDTH           = 3 * 5 + 3,
+    parameter       FIFO_DATA_WIDTH             = ENCODE_ADDR_WIDTH + 3+1+3*8, //+1原因在于0-8需要4bit数据来表示
+    parameter       FIFO_DEPTH_1                = ENCODE_ADDR_WIDTH + 10,
+    parameter       FIFO_DEPTH_2                = ENCODE_ADDR_WIDTH + 10
 ) (
-  input  logic                                     clk,
-  input  logic                                     rst_n,
+    input                               clk                        ,
+    input                               rst_n                      ,
   //控制信号，用于与controler交互 
-  input  logic                                     search_start,
-  output logic                                     search_done,
+    input                               search_start               ,
+    output reg                          search_done                ,
   //用于和主存连接的mem接口
-  output logic                                     mem_sram_CEN,   
-  output logic                [ADDR_BUS_WIDTH-1:0] mem_sram_A,     
-  output logic                [DATA_BUS_WIDTH-1:0] mem_sram_D,     
-  output logic                                     mem_sram_GWEN,  
-  input  logic                [DATA_BUS_WIDTH-1:0] mem_sram_Q,     
+    output                              mem_sram_CEN               ,
+    output               [  63: 0]      mem_sram_A                 ,
+    output               [  63: 0]      mem_sram_D                 ,
+    output                              mem_sram_GWEN              ,
+    input                [  63: 0]      mem_sram_Q                 ,
   //CSR信号
-  input  logic [DIMENTION-1:0][    DATA_WIDTH-1:0] cam_pos,       
-  input  logic                [    DATA_WIDTH-1:0] dist_max,      
-  input  logic                [    DATA_WIDTH-1:0] s,             
+    input             [2:0][15: 0]      cam_pos                    ,
+    input                [  15: 0]      dist_max                   ,
+    input                [  15: 0]      s                          ,
   //输出的feature
-  output logic                [DATA_BUS_WIDTH-1:0] feature_out,
-  input  logic                                     out_valid,
-  output logic                                     out_ready,
+    output               [  63: 0]      feature_out                ,
+    output                              out_ready                  ,
   //当前主存中存储的八叉树的总量
-  input  logic                [ COUNTER_WIDTH-1:0] tree_num
+    input                [   3: 0]      tree_num                    
 );
   //针对SRAM接口进行多路选通
-  localparam SRAM_LOD = 0, SRAM_SEARCH = 1;
+    localparam      [   1: 0] SRAM_LOD                    = 0     , 
+                              SRAM_SEARCH                 = 1     ;
 
   //状态机的状态
-  localparam IDLE = 0, LOD = 1, TREE_SEARCH = 2, DONE = 3;
+    localparam      [   1: 0] IDLE                        = 0     , 
+                              LOD                         = 1     ,
+                              TREE_SEARCH                 = 2     ,
+                              DONE                        = 3     ;
 
   //用于可能的计数器
-  logic [COUNTER_WIDTH-1:0] tree_cnt;
+    reg                  [   3: 0]      tree_cnt                    ;
 
   //主存接口
-  logic                      lod_sram_CEN;
-  logic [ADDR_BUS_WIDTH-1:0] lod_sram_A;
-  logic [DATA_BUS_WIDTH-1:0] lod_sram_D;
-  logic                      lod_sram_GWEN;
-  logic [DATA_BUS_WIDTH-1:0] lod_sram_Q;
-  logic                      search_sram_CEN;
-  logic [ADDR_BUS_WIDTH-1:0] search_sram_A;
-  logic [DATA_BUS_WIDTH-1:0] search_sram_D;
-  logic                      search_sram_GWEN;
-  logic [DATA_BUS_WIDTH-1:0] search_sram_Q;
+    wire                                lod_sram_CEN                ;
+    wire                 [  63: 0]      lod_sram_A                  ;
+    wire                 [  63: 0]      lod_sram_D                  ;
+    wire                                lod_sram_GWEN               ;
+    wire                 [  63: 0]      lod_sram_Q                  ;
+    wire                                search_sram_CEN             ;
+    wire                 [  63: 0]      search_sram_A               ;
+    wire                 [  63: 0]      search_sram_D               ;
+    wire                                search_sram_GWEN            ;
+    wire                 [  63: 0]      search_sram_Q               ;
 
   //用于和lod计算部分的接口
-  logic [  DATA_WIDTH-1:0] current_tree_count;
-  logic [TREE_LEVEL-1:0]   lod_active;
-  logic                    lod_ready;
-  logic                    cal_lod;
+    reg                  [  15: 0]      current_tree_count          ;
+    wire                 [   4: 0]      lod_active                  ;
+    wire                                lod_ready                   ;
+    reg                                 cal_lod                     ;
 
   //用于和tree search链接的端口
-  logic                    tree_search_done;
-  logic                    tree_search_start;
+    wire                                tree_search_done            ;
+    reg                                 tree_search_start           ;
 
   //用于Searcher顶层的一些状态指示
-  logic [SELECT_WIDTH-1:0]  mem_select;
-  logic [SELECT_WIDTH-1:0]  searcher_state;
+    reg                  [   1: 0]      mem_select                  ;
+    reg                  [   1: 0]      searcher_state              ;
+    reg                  [   4: 0]      lod_active_reg              ;
 
-  //用于生成内存的选通逻辑
-  always_comb begin : Mux_mem
-    if (rst_n == 0) begin
-      mem_sram_CEN  = 1;
-      mem_sram_A    = 0;
-      mem_sram_D    = 0;
-      mem_sram_GWEN = 1;
-      search_sram_Q = 0;
-      lod_sram_Q    = 0;
-    end else begin
-      case (mem_select)
-        SRAM_LOD: begin
-          mem_sram_CEN  = lod_sram_CEN;
-          mem_sram_A    = lod_sram_A;
-          mem_sram_D    = lod_sram_D;
-          mem_sram_GWEN = lod_sram_GWEN;
-          search_sram_Q = 0;
-          lod_sram_Q    = mem_sram_Q;
-        end
-        SRAM_SEARCH: begin
-          mem_sram_CEN  = search_sram_CEN;
-          mem_sram_A    = search_sram_A;
-          mem_sram_D    = search_sram_D;
-          mem_sram_GWEN = search_sram_GWEN;
-          search_sram_Q = mem_sram_Q;
-          lod_sram_Q    = 0;
-        end
-        default: begin
-          mem_sram_CEN  = 1;
-          mem_sram_A    = 0;
-          mem_sram_D    = 0;
-          mem_sram_GWEN = 1;
-          search_sram_Q = 0;
-          lod_sram_Q    = 0;
-        end
-      endcase
-    end
-  end
+    assign      mem_sram_CEN         = (mem_select == SRAM_LOD)    ? lod_sram_CEN    :
+                                       (mem_select == SRAM_SEARCH) ? search_sram_CEN :  1'b1;
+    assign      mem_sram_A           = (mem_select == SRAM_LOD)    ? lod_sram_A      :
+                                       (mem_select == SRAM_SEARCH) ? search_sram_A   :  '0;
+    assign      mem_sram_D           = (mem_select == SRAM_LOD)    ? lod_sram_D      :
+                                       (mem_select == SRAM_SEARCH) ? search_sram_D   :  '0;
+    assign      mem_sram_GWEN        = (mem_select == SRAM_LOD)    ? lod_sram_GWEN   :
+                                       (mem_select == SRAM_SEARCH) ? search_sram_GWEN:  1'b1;
+    assign      search_sram_Q        = (mem_select == SRAM_SEARCH) ? mem_sram_Q      :  '0;
+    assign      lod_sram_Q           = (mem_select == SRAM_LOD)    ? mem_sram_Q      :  '0;
+
 
   //用于两个模块流程的状态机
   always_ff @(posedge clk or negedge rst_n) begin : state_machine_for_searcher
     if (rst_n == 0) begin
       mem_select <= SRAM_LOD;
+      searcher_state <= IDLE;
       tree_cnt   <= 0;
       cal_lod    <= 0;
+      search_done <= 0;
+      tree_search_start <= 0;
     end else begin
       case (searcher_state)
         IDLE: begin
           mem_select <= SRAM_LOD;
           tree_cnt   <= 0;
           cal_lod    <= 0;
+          search_done <= 0;
           if (search_start) begin
             searcher_state <= LOD;
           end
@@ -137,6 +108,7 @@ module Searcher #(
             mem_select     <= SRAM_SEARCH;
             tree_search_start <= 1;
             cal_lod        <= 0;
+            lod_active_reg <= lod_active;
           end else begin
             cal_lod    <= 1;
             mem_select <= SRAM_LOD;
@@ -167,47 +139,46 @@ module Searcher #(
   end
 
   lod_compute #(
-    .LOD_START_ADDR(LOD_START_ADDR)
+    .LOD_START_ADDR              (LOD_START_ADDR            ) 
   ) u_lod_compute (
-    .clk               (clk),
-    .rst_n             (rst_n),
-    .cal_lod           (cal_lod),
-    .lod_ready         (lod_ready),
-    .mem_sram_CEN      (lod_sram_CEN),
-    .mem_sram_A        (lod_sram_A),
-    .mem_sram_D        (lod_sram_D),
-    .mem_sram_GWEN     (lod_sram_GWEN),
-    .mem_sram_Q        (lod_sram_Q),
-    .cam_pos           (cam_pos),
-    .current_tree_count(current_tree_count),
-    .lod_active        (lod_active),
-    .dist_max          (dist_max),
-    .s                 (s)
+    .clk                         (clk                       ),
+    .rst_n                       (rst_n                     ),
+    .cal_lod                     (cal_lod                   ),
+    .lod_ready                   (lod_ready                 ),
+    .mem_sram_CEN                (lod_sram_CEN              ),
+    .mem_sram_A                  (lod_sram_A                ),
+    .mem_sram_D                  (lod_sram_D                ),
+    .mem_sram_GWEN               (lod_sram_GWEN             ),
+    .mem_sram_Q                  (lod_sram_Q                ),
+    .cam_pos                     (cam_pos                   ),
+    .current_tree_count          (current_tree_count        ),
+    .lod_active                  (lod_active                ),
+    .dist_max                    (dist_max                  ),
+    .s                           (s                         ) 
   );
 
   tree_search  #(
-      .FEATURE_LENTH      (FEATURE_LENTH      ),
-      .TREE_ADDR_START    (TREE_ADDR_START    ),
-      .FEATURE_START_ADDR (FEATURE_START_ADDR ),
-      .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH  ),
-      .FIFO_DATA_WIDTH    (FIFO_DATA_WIDTH    ),
-      .FIFO_DEPTH_1       (FIFO_DEPTH_1       ),
-      .FIFO_DEPTH_2       (FIFO_DEPTH_2       )
+    .FEATURE_LENTH               (FEATURE_LENTH             ),
+    .TREE_START_ADDR             (TREE_START_ADDR           ),
+    .FEATURE_START_ADDR          (FEATURE_START_ADDR        ),
+    .ENCODE_ADDR_WIDTH           (ENCODE_ADDR_WIDTH         ),
+    .FIFO_DATA_WIDTH             (FIFO_DATA_WIDTH           ),
+    .FIFO_DEPTH_1                (FIFO_DEPTH_1              ),
+    .FIFO_DEPTH_2                (FIFO_DEPTH_2              ) 
   ) u_tree_search (
-    .clk              (clk),
-    .rst_n            (rst_n),
-    .tree_search_start(tree_search_start),
-    .tree_search_done_o (tree_search_done),
-    .mem_sram_CEN_o     (search_sram_CEN),
-    .mem_sram_A_o       (search_sram_A),
-    .mem_sram_D_o       (search_sram_D),
-    .mem_sram_GWEN_o    (search_sram_GWEN),
-    .mem_sram_Q       (search_sram_Q),
-    .feature_out      (feature_out),
-    .out_valid        (out_valid),
-    .out_ready_o        (out_ready),
-    .tree_cnt         (tree_cnt),
-    .lod_active       (lod_active)
+    .clk                         (clk                       ),
+    .rst_n                       (rst_n                     ),
+    .tree_search_start           (tree_search_start         ),
+    .tree_search_done_o          (tree_search_done          ),
+    .mem_sram_CEN_o              (search_sram_CEN           ),
+    .mem_sram_A_o                (search_sram_A             ),
+    .mem_sram_D_o                (search_sram_D             ),
+    .mem_sram_GWEN_o             (search_sram_GWEN          ),
+    .mem_sram_Q                  (search_sram_Q             ),
+    .feature_out                 (feature_out               ),
+    .out_ready                   (out_ready                 ),
+    .tree_cnt                    (tree_cnt                  ),
+    .lod_active                  (lod_active_reg            ) 
   );
   
   
@@ -215,7 +186,7 @@ endmodule
 
 module tree_search #(
     parameter       FEATURE_LENTH               = 9     ,
-    parameter       TREE_ADDR_START             = 0     ,
+    parameter       TREE_START_ADDR             = 0     ,
     parameter       FEATURE_START_ADDR          = 400   ,
     parameter       ENCODE_ADDR_WIDTH           = 3 * 5 + 3,
     parameter       FIFO_DATA_WIDTH             = ENCODE_ADDR_WIDTH + 3+1+3*8, //+1原因在与0-8需要4bit数据来表示
@@ -226,19 +197,18 @@ module tree_search #(
     input                               rst_n                      ,
   //控制信号
     input                               tree_search_start          ,
-    output                              tree_search_done_o           ,
+    output                              tree_search_done_o         ,
     input                [   3: 0]      tree_cnt                   ,
     input                [   4: 0]      lod_active                 ,
   //主存接口
-    output                              mem_sram_CEN_o               ,
-    output               [  63: 0]      mem_sram_A_o                 ,
-    output               [  63: 0]      mem_sram_D_o                 ,
-    output                              mem_sram_GWEN_o              ,
+    output                              mem_sram_CEN_o             ,
+    output               [  63: 0]      mem_sram_A_o               ,
+    output               [  63: 0]      mem_sram_D_o               ,
+    output                              mem_sram_GWEN_o            ,
     input                [  63: 0]      mem_sram_Q                 ,
   //输出接口（连PE）
     output               [  63: 0]      feature_out                ,
-    input                               out_valid                  ,
-    output                              out_ready_o                   
+    output                              out_ready                 
 );
     localparam      [   1: 0] IDLE                        = 0     , 
                               SEARCH                      = 1     ,
@@ -252,7 +222,7 @@ module tree_search #(
                               FIFO_OUTPUT_THIS_ANCHOR     = 5     ,
                               FIFO_STALL_1_C              = 6     ;
 
-    localparam      [4:0][63: 0]ADDR_VARY                 = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
+    localparam    [4:0][63: 0]ADDR_VARY                   = {64'd74, 64'd10, 64'd2, 64'd1, 64'd0};
     localparam       int      PRIMES[4:0]                 = {2099719, 3867465, 807545, 2654435, 1};// 质数数组，增强哈希随机性
 
     reg                                 mem_sram_CEN                ;
@@ -260,7 +230,6 @@ module tree_search #(
     reg                  [  63: 0]      mem_sram_D                  ;
     reg                                 mem_sram_GWEN               ;
     reg                                 tree_search_done            ;
-    reg                                 out_ready                   ;
     
 
   //控制信号、计数器、状态机
@@ -273,7 +242,7 @@ module tree_search #(
     reg                                 first                       ;
 
   //输入到FIFO中保存的anchor原码地址
-    reg                  [ENCODE_ADDR_WIDTH-1: 0]      w_fifo_pos_encode           ;
+    reg   [ENCODE_ADDR_WIDTH-1: 0]      w_fifo_pos_encode           ;
   //从64bit中选出关心的16bit,4选1。
     reg                  [   1: 0]      anchor_interested           ;
 
@@ -381,7 +350,7 @@ module tree_search #(
     // 遍历每一位，如果为1则将位下标存入 ones_pos 数组中
     for (i = 0; i < 8; i = i + 1) begin
       if (self_data[i]) begin
-        self_ones_pos[j] = i[2:0];  // i 的值（只取低3位）即为位序
+        self_ones_pos[j] = i[2:0];                                  // i 的值（只取低3位）即为位序
         j                = j + 1;
       end
     end
@@ -398,7 +367,7 @@ module tree_search #(
     // 遍历每一位，如果为1则将位下标存入 ones_pos 数组中
     for (u = 0; u < 8; u = u + 1) begin
       if (child_data[u]) begin
-        child_ones_pos[o] = u[2:0];  // i 的值（只取低3位）即为位序
+        child_ones_pos[o] = u[2:0];                                 // i 的值（只取低3位）即为位序
         o                 = o + 1;
       end
     end
@@ -455,7 +424,7 @@ module tree_search #(
         end
         FIFO_SEARCH:begin
           if(searching_done) begin
-            fifo_state <= FIFO_READY_OUT;
+            fifo_state <= FIFO_OUTPUT;
             fifo_1_rd_en <= 0;
           end else if(fifo_1_empty == 0) begin
               fifo_1_rd_en <= 1;
@@ -479,18 +448,11 @@ module tree_search #(
             fifo_cnt <= fifo_cnt +1;
           end
         end
-        FIFO_READY_OUT:begin
-          if(out_valid)begin
-            fifo_state <= FIFO_OUTPUT;
-            out_ready <= 0;
-          end  else begin
-            out_ready <= 1;
-          end
-        end
         FIFO_OUTPUT:begin
           if(fifo_2_empty == 0) begin
             fifo_2_rd_en <= 1;
             fifo_state <= FIFO_OUTPUT_THIS_ANCHOR;
+             
           end else begin
             fifo_state <= FIFO_IDLE;
           end
@@ -552,8 +514,9 @@ module tree_search #(
     end
   end
 
-    assign      mem_sram_A_o           = address_for_sram;
+    assign      mem_sram_A_o         = address_for_sram;
     assign      feature_out          = (fifo_state == FIFO_OUTPUT_THIS_ANCHOR)?mem_sram_Q:0;
+    assign      out_ready            = (fifo_state == FIFO_OUTPUT_THIS_ANCHOR);
     assign      mem_read_data_valid_pre= ~mem_sram_CEN;
 
   //准备地址相关信息 根据当前的fifo cnt 准备好要抓取的anchor的位置。
@@ -632,7 +595,7 @@ module tree_search #(
           end
         end
       end
-      actual_address   = address_part_ + ADDR_VARY[level] + TREE_ADDR_START;
+      actual_address   = address_part_ + ADDR_VARY[level] + TREE_START_ADDR;
       address_for_sram = {2'b0, actual_address[63:2]};
       //same_addr        = (address_for_sram == last_addr_read) ? 1 : 0;// TODO：可以加一个同一地址的信号，用于标识是否有必要再次访存？
     end else if (tree_state == OUT) begin                           //TODO:生成hash寻址逻辑
@@ -680,8 +643,8 @@ module tree_search #(
       searching_done <= 0;
       outing_done    <= 0;
     end else begin
-      if((tree_state == SEARCH) & 
-        fifo_1_empty & 
+      if((tree_state == SEARCH) &
+        fifo_1_empty &
         ((write_fifo_data_valid+mem_read_data_valid_pre+mem_read_data_valid+fifo_1_wr_en )==0))begin
         //当搜索fifo空，并且流水线中不存在任何有效数据时，搜索结束
         searching_done <= 1;
@@ -739,6 +702,5 @@ module tree_search #(
     assign      mem_sram_D_o         = mem_sram_D;
     assign      mem_sram_GWEN_o      = mem_sram_GWEN;
     assign      tree_search_done_o   = tree_search_done;
-    assign      out_ready_o          = out_ready;
 
 endmodule

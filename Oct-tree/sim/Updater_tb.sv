@@ -15,7 +15,7 @@ module Updater_tb;
   localparam LOG_CHILD_NUM      = 3;
   localparam TREE_LEVEL         = 5;
   localparam LOG_TREE_LEVEL     = 3;
-  localparam TREE_ADDR_START    = 0;
+  localparam TREE_START_ADDR    = 0;
   localparam FEATURE_START_ADDR = 1200;
   localparam ENCODE_ADDR_WIDTH  = LOG_CHILD_NUM * TREE_LEVEL + LOG_TREE_LEVEL;
   
@@ -38,18 +38,8 @@ module Updater_tb;
   
   // 实例化待测模块 Updater
   Updater #(
-    .DIMENTION          (DIMENTION),
-    .DATA_WIDTH         (DATA_WIDTH),
-    .DATA_BUS_WIDTH     (DATA_BUS_WIDTH),
-    .ADDR_BUS_WIDTH     (ADDR_BUS_WIDTH),
-    .CONTROL_WIDTH      (CONTROL_WIDTH),
-    .SELECT_WIDTH       (SELECT_WIDTH),
     .FEATURE_LENTH      (FEATURE_LENTH),
-    .CHILDREN_NUM       (CHILDREN_NUM),
-    .LOG_CHILD_NUM      (LOG_CHILD_NUM),
-    .TREE_LEVEL         (TREE_LEVEL),
-    .LOG_TREE_LEVEL     (LOG_TREE_LEVEL),
-    .TREE_ADDR_START    (TREE_ADDR_START),
+    .TREE_START_ADDR    (TREE_START_ADDR),
     .FEATURE_START_ADDR (FEATURE_START_ADDR),
     .ENCODE_ADDR_WIDTH  (ENCODE_ADDR_WIDTH)
   ) uut (
@@ -138,7 +128,7 @@ module Updater_tb;
       feature_in = 64'd10 + {32'd0,i};  
       #10; add_anchor =0 ;
     end
-    #200;
+    wait(add_done);
     $finish;
   end
 
